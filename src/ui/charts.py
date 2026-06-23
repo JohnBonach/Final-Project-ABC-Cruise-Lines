@@ -7,8 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.constants import HISTORICAL_DEMAND_COLUMNS, RESERVATION_CATEGORIES
-from src.decision.narrative import REQUIRED_COMPARISON_COLUMNS
+from src.constants import CATEGORY_DISPLAY_LABELS, HISTORICAL_DEMAND_COLUMNS, RESERVATION_CATEGORIES
 from src.validation import FieldValidationError
 
 PLAN_ORDER: tuple[str, ...] = (
@@ -23,10 +22,8 @@ PLAN_ORDER: tuple[str, ...] = (
 
 def _require_history_table(history: pd.DataFrame) -> pd.DataFrame:
     """Validate the shared history table contract used by the UI."""
-
     if not isinstance(history, pd.DataFrame):
         raise FieldValidationError("history must be a pandas DataFrame")
-
     missing_columns = [
         column for column in HISTORICAL_DEMAND_COLUMNS if column not in history.columns
     ]
@@ -34,7 +31,6 @@ def _require_history_table(history: pd.DataFrame) -> pd.DataFrame:
         raise FieldValidationError(
             f"history is missing required columns: {missing_columns}"
         )
-
     return history.copy(deep=True)
 
 
@@ -43,10 +39,8 @@ def _require_forecast_table(
     automatic_forecast: Mapping[str, float],
 ) -> pd.DataFrame:
     """Validate the forecast display inputs before building the review table."""
-
     if not isinstance(forecast_result, pd.DataFrame):
         raise FieldValidationError("forecast_result must be a pandas DataFrame")
-
     missing_columns = [
         column
         for column in (
@@ -63,7 +57,6 @@ def _require_forecast_table(
         raise FieldValidationError(
             f"forecast_result is missing required columns: {missing_columns}"
         )
-
     missing_categories = [
         category
         for category in RESERVATION_CATEGORIES
@@ -73,7 +66,6 @@ def _require_forecast_table(
         raise FieldValidationError(
             f"forecast_result is missing required categories: {missing_categories}"
         )
-
     missing_automatic_categories = [
         category for category in RESERVATION_CATEGORIES if category not in automatic_forecast
     ]
@@ -81,7 +73,6 @@ def _require_forecast_table(
         raise FieldValidationError(
             f"automatic_forecast is missing required categories: {missing_automatic_categories}"
         )
-
     return forecast_result.copy(deep=True)
 
 
@@ -91,14 +82,11 @@ def build_history_display_frame(
     weeks_to_display: int | None = None,
 ) -> pd.DataFrame:
     """Return a UI-friendly history table with normalized date formatting."""
-
     if weeks_to_display is not None and weeks_to_display <= 0:
         raise ValueError("weeks_to_display must be greater than 0")
-
     display_history = _require_history_table(history)
     if weeks_to_display is not None:
         display_history = display_history.tail(weeks_to_display)
-
     display_history = display_history.loc[:, HISTORICAL_DEMAND_COLUMNS].copy()
     display_history["week_start"] = pd.to_datetime(
         display_history["week_start"],
@@ -107,13 +95,21 @@ def build_history_display_frame(
     return display_history
 
 
+def build_history_display_frame_with_labels(history: pd.DataFrame) -> pd.DataFrame:
+    """Return a UI-friendly history table with human-readable category labels."""
+    display = build_history_display_frame(history)
+    display = display.rename(
+        columns={cat: CATEGORY_DISPLAY_LABELS[cat] for cat in RESERVATION_CATEGORIES}
+    )
+    return display
+
+
 def build_forecast_display_frame(
     automatic_forecast: Mapping[str, float],
     forecast_result: pd.DataFrame,
     manual_overrides: Mapping[str, float] | None = None,
 ) -> pd.DataFrame:
     """Combine automatic and effective forecast values into a reviewable table."""
-
     ordered_forecast = _require_forecast_table(forecast_result, automatic_forecast).set_index(
         "category"
     )
@@ -158,179 +154,301 @@ def build_category_assumptions_frame(
     category_rows: Sequence[Mapping[str, Any]],
 ) -> pd.DataFrame:
     """Return a review table for the category-level assumption controls."""
-
     return pd.DataFrame(
         list(category_rows),
         columns=(
             "category",
             "handling_time_minutes",
-            "average_revenue",
-            "contribution_per_reservation",
+            "average_booking_value",
         ),
     )
 
 
-def _require_comparison_table(comparison_table: pd.DataFrame) -> pd.DataFrame:
-    """Validate the shared comparison-table contract used by the dashboard."""
-
-    if not isinstance(comparison_table, pd.DataFrame):
-        raise FieldValidationError("comparison_table must be a pandas DataFrame")
-
-    missing_columns = [
-        column for column in REQUIRED_COMPARISON_COLUMNS if column not in comparison_table.columns
-    ]
-    if missing_columns:
-        raise FieldValidationError(
-            f"comparison_table is missing required columns: {missing_columns}"
-        )
-    return comparison_table.copy(deep=True)
-
-
-def _find_plan_record(comparison_table: pd.DataFrame, plan_name: str) -> dict[str, Any]:
-    """Return the first comparison row for a named plan."""
-
-    matches = comparison_table.loc[comparison_table["plan_name"] == plan_name]
-    if matches.empty:
-        raise FieldValidationError(f"comparison_table is missing the {plan_name!r} row")
-    return dict(matches.iloc[0].to_dict())
-
-
-def build_recommendation_summary_frame(
-    recommendation: Mapping[str, Any],
-    comparison_table: pd.DataFrame,
+def build_deterministic_kpi_frame(
+    deterministic_result: Mapping[str, Any],
+    effective_forecast: Mapping[str, float],
 ) -> pd.DataFrame:
-    """Build a compact executive summary table from the orchestration result."""
-
-    normalized_table = _require_comparison_table(comparison_table)
-    recommended_record = recommendation["recommended_staffing_record"]
-    recommended_staffing_agents = int(recommendation["recommended_staffing_agents"])
-
-    previous_week_record = _find_plan_record(normalized_table, "Previous Week")
-    manager_plan_record = _find_plan_record(normalized_table, "Manager Plan")
-
+    """Extract primary KPIs from the deterministic staffing result."""
+    total_bookings = sum(effective_forecast.values())
     return pd.DataFrame(
         [
+            {"metric": "Forecasted bookings", "value": round(total_bookings, 1), "units": "bookings / week"},
+            {
+                "metric": "Forecasted workload",
+                "value": round(float(deterministic_result["total_workload_hours"]), 1),
+                "units": "hours / week",
+            },
+            {
+                "metric": "Raw staffing need",
+                "value": round(float(deterministic_result["raw_required_fte"]), 2),
+                "units": "FTE",
+            },
+            {
+                "metric": "Whole-agent need",
+                "value": int(deterministic_result["unconstrained_required_agents"]),
+                "units": "agents",
+            },
             {
                 "metric": "Recommended staffing",
-                "value": recommended_staffing_agents,
+                "value": int(deterministic_result["recommended_inhouse_agents"]),
                 "units": "agents",
-                "reference_plan": "Financial Recommendation",
-            },
-            {
-                "metric": "Capacity confidence",
-                "value": float(recommended_record["capacity_confidence"]) * 100.0,
-                "units": "%",
-                "reference_plan": "Financial Recommendation",
-            },
-            {
-                "metric": "Expected overtime",
-                "value": float(recommended_record["expected_overtime_hours"]),
-                "units": "hours/week",
-                "reference_plan": "Financial Recommendation",
-            },
-            {
-                "metric": "Expected abandonment",
-                "value": float(recommended_record["expected_abandoned_total"]),
-                "units": "reservations/week",
-                "reference_plan": "Financial Recommendation",
-            },
-            {
-                "metric": "Expected total economic cost",
-                "value": float(recommended_record["expected_total_economic_cost"]),
-                "units": "USD/week",
-                "reference_plan": "Financial Recommendation",
-            },
-            {
-                "metric": "Difference vs previous week",
-                "value": recommended_staffing_agents - int(previous_week_record["staffing_agents"]),
-                "units": "agents",
-                "reference_plan": "Previous Week",
-            },
-            {
-                "metric": "Difference vs manager plan",
-                "value": recommended_staffing_agents - int(manager_plan_record["staffing_agents"]),
-                "units": "agents",
-                "reference_plan": "Manager Plan",
             },
         ],
-        columns=("metric", "value", "units", "reference_plan"),
+        columns=("metric", "value", "units"),
     )
 
 
-def build_plan_comparison_frame(comparison_table: pd.DataFrame) -> pd.DataFrame:
-    """Return a comparison table with clear units and recommendation deltas."""
+def build_secondary_kpi_frame(
+    deterministic_result: Mapping[str, Any],
+    previous_week_staffing: int,
+    manager_planned_staffing: int,
+    financial_recommendation: Mapping[str, Any],
+) -> pd.DataFrame:
+    """Extract secondary management KPIs."""
+    recommended = int(deterministic_result["recommended_inhouse_agents"])
+    recommended_record = financial_recommendation["recommended_staffing_record"]
+    total_operating_cost = float(recommended_record["expected_total_weekly_operating_cost"])
+    spare_capacity = float(deterministic_result["spare_capacity_hours"])
+    overflow = float(deterministic_result["overflow_workload_hours"])
 
-    normalized_table = _require_comparison_table(comparison_table)
-    recommended_record = _find_plan_record(
-        normalized_table,
-        "Financial Recommendation",
-    )
-    recommended_staffing = int(recommended_record["staffing_agents"])
-    recommended_cost = float(recommended_record["expected_total_economic_cost"])
+    rows = [
+        {
+            "metric": "Previous-week staffing",
+            "value": previous_week_staffing,
+            "units": "agents",
+        },
+        {
+            "metric": "Manager-planned staffing",
+            "value": manager_planned_staffing,
+            "units": "agents",
+        },
+        {
+            "metric": "Change from previous week",
+            "value": f"{recommended - previous_week_staffing:+d}",
+            "units": "agents",
+        },
+        {
+            "metric": "Spare capacity or overflow",
+            "value": f"{spare_capacity:.1f} spare" if overflow == 0.0 else f"{overflow:.1f} overflow",
+            "units": "hours / week",
+        },
+        {
+            "metric": "Total weekly operating cost",
+            "value": total_operating_cost,
+            "units": "USD / week",
+        },
+    ]
+    return pd.DataFrame(rows, columns=("metric", "value", "units"))
 
-    rows: list[dict[str, Any]] = []
-    for plan_name in PLAN_ORDER:
-        record = _find_plan_record(normalized_table, plan_name)
-        staffing_agents = int(record["staffing_agents"])
-        total_cost = float(record["expected_total_economic_cost"])
+
+def build_workload_breakdown_frame(
+    effective_forecast: Mapping[str, float],
+    deterministic_result: Mapping[str, Any],
+    category_assumptions: Sequence[Mapping[str, Any]],
+) -> pd.DataFrame:
+    """Build per-category workload breakdown table with human-readable labels."""
+    handling_times = {
+        item["category"]: float(item["handling_time_minutes"])
+        for item in category_assumptions
+    }
+    workload_by_cat = deterministic_result["workload_hours_by_category"]
+    total_workload = float(deterministic_result["total_workload_hours"])
+
+    rows = []
+    for category in RESERVATION_CATEGORIES:
+        bookings = float(effective_forecast[category])
+        handling = handling_times[category]
+        wl_hours = float(workload_by_cat[category])
+        share = (wl_hours / total_workload * 100.0) if total_workload > 0 else 0.0
         rows.append(
             {
-                "plan_name": plan_name,
-                "staffing_agents": staffing_agents,
-                "delta_staffing_vs_recommendation": staffing_agents - recommended_staffing,
-                "capacity_confidence_pct": float(record["capacity_confidence"]) * 100.0,
-                "expected_overtime_hours": float(record["expected_overtime_hours"]),
-                "expected_abandoned_total": float(record["expected_abandoned_total"]),
-                "expected_total_economic_cost_usd": total_cost,
-                "delta_total_economic_cost_usd_vs_recommendation": total_cost - recommended_cost,
+                "cruise_product": CATEGORY_DISPLAY_LABELS[category],
+                "forecast_bookings": bookings,
+                "handling_time_min": handling,
+                "workload_hours": round(wl_hours, 1),
+                "share_of_workload_pct": round(share, 1),
             }
         )
 
     return pd.DataFrame(
         rows,
         columns=(
-            "plan_name",
-            "staffing_agents",
-            "delta_staffing_vs_recommendation",
-            "capacity_confidence_pct",
-            "expected_overtime_hours",
-            "expected_abandoned_total",
-            "expected_total_economic_cost_usd",
-            "delta_total_economic_cost_usd_vs_recommendation",
+            "cruise_product",
+            "forecast_bookings",
+            "handling_time_min",
+            "workload_hours",
+            "share_of_workload_pct",
         ),
     )
 
 
-def build_tradeoff_chart_frames(
-    comparison_table: pd.DataFrame,
-) -> dict[str, pd.DataFrame]:
-    """Return chart-ready frames for cost and risk comparison plots."""
+def build_staffing_capacity_frame(
+    deterministic_result: Mapping[str, Any],
+    workforce_assumptions: Mapping[str, Any],
+) -> pd.DataFrame:
+    """Build staffing and capacity explanation table."""
+    return pd.DataFrame(
+        [
+            {
+                "step": "Raw FTE",
+                "value": round(float(deterministic_result["raw_required_fte"]), 2),
+                "units": "FTE",
+                "note": f"Workload / {workforce_assumptions['weekly_booking_processing_hours_per_agent']} hrs per agent",
+            },
+            {
+                "step": "Unconstrained required agents",
+                "value": int(deterministic_result["unconstrained_required_agents"]),
+                "units": "agents",
+                "note": "ceil(Raw FTE)",
+            },
+            {
+                "step": "Minimum operating floor",
+                "value": int(workforce_assumptions["minimum_schedulable_agents"]),
+                "units": "agents",
+                "note": "Minimum schedulable",
+            },
+            {
+                "step": "Maximum in-house capacity",
+                "value": int(workforce_assumptions["maximum_inhouse_agents"]),
+                "units": "agents",
+                "note": "Maximum in-house",
+            },
+            {
+                "step": "Recommended in-house agents",
+                "value": int(deterministic_result["recommended_inhouse_agents"]),
+                "units": "agents",
+                "note": "Clamped to floor and cap",
+            },
+            {
+                "step": "Spare capacity",
+                "value": round(float(deterministic_result["spare_capacity_hours"]), 1),
+                "units": "hours / week",
+                "note": "Available for other tasks",
+            },
+            {
+                "step": "Overflow workload",
+                "value": round(float(deterministic_result["overflow_workload_hours"]), 1),
+                "units": "hours / week",
+                "note": "Routed to third-party",
+            },
+        ],
+        columns=("step", "value", "units", "note"),
+    )
 
-    normalized_table = _require_comparison_table(comparison_table)
-    comparison_frame = build_plan_comparison_frame(normalized_table)
 
-    return {
-        "cost": comparison_frame.loc[
-            :, ["plan_name", "expected_total_economic_cost_usd"]
-        ].copy(),
-        "overtime": comparison_frame.loc[
-            :, ["plan_name", "expected_overtime_hours"]
-        ].copy(),
-        "abandonment": comparison_frame.loc[
-            :, ["plan_name", "expected_abandoned_total"]
-        ].copy(),
+def build_financial_breakdown_frame(
+    financial_recommendation: Mapping[str, Any],
+    deterministic_result: Mapping[str, Any],
+    category_assumptions: Sequence[Mapping[str, Any]],
+    strategic_assumptions: Mapping[str, Any],
+) -> pd.DataFrame:
+    """Build financial breakdown table."""
+    recommended_record = financial_recommendation["recommended_staffing_record"]
+    labor_cost = float(recommended_record["regular_labor_cost"])
+    overflow_commission = float(recommended_record["expected_overflow_commission"])
+    total_cost = float(recommended_record["expected_total_weekly_operating_cost"])
+    overflow_bookings = deterministic_result.get("overflow_bookings_by_category", {})
+
+    avg_booking_values = {
+        item["category"]: float(item["average_booking_value"])
+        for item in category_assumptions
     }
 
+    rows = [
+        {
+            "item": "In-house labor cost",
+            "value": labor_cost,
+            "units": "USD / week",
+        },
+        {
+            "item": "Third-party overflow commission",
+            "value": overflow_commission,
+            "units": "USD / week",
+        },
+        {
+            "item": "Total weekly operating cost",
+            "value": total_cost,
+            "units": "USD / week",
+        },
+    ]
 
-def build_methodology_points() -> tuple[str, ...]:
-    """Return manager-friendly summary points for the recommendation flow."""
+    for category in RESERVATION_CATEGORIES:
+        overflow_bk = float(overflow_bookings.get(category, 0.0))
+        if overflow_bk > 0.0:
+            label = CATEGORY_DISPLAY_LABELS[category]
+            booking_value = overflow_bk * avg_booking_values[category]
+            comm = booking_value * float(strategic_assumptions["third_party_commission_rate"])
+            rows.append(
+                {
+                    "item": f"  - Overflow {label} (commission)",
+                    "value": round(comm, 2),
+                    "units": "USD / week",
+                }
+            )
 
-    return (
-        "Validate the shared history and scenario inputs before any staffing calculation begins.",
-        "Build the weekly demand forecast from recent history, then let manual overrides replace only the categories the manager enables.",
-        "Convert forecast demand into weekly workload using category handling times and workforce productivity assumptions.",
-        "Compare the candidate staffing plans on cost, overtime, abandonment, and capacity confidence.",
-        "Choose the plan with the lowest expected weekly economic cost among the evaluated options.",
+    return pd.DataFrame(rows, columns=("item", "value", "units"))
+
+
+def build_forecast_breakdown_frame(
+    automatic_forecast: Mapping[str, float],
+    scenario_adjusted_forecast: Mapping[str, float],
+    effective_forecast: Mapping[str, float],
+    manual_overrides: Mapping[str, float] | None,
+    scenario_name: str,
+) -> pd.DataFrame:
+    """Build forecast breakdown showing all layers."""
+    manual_overrides = manual_overrides or {}
+    rows = []
+    for category in RESERVATION_CATEGORIES:
+        auto = float(automatic_forecast[category])
+        adj = float(scenario_adjusted_forecast[category])
+        eff = float(effective_forecast[category])
+        is_manual = category in manual_overrides
+        rows.append(
+            {
+                "cruise_product": CATEGORY_DISPLAY_LABELS[category],
+                "automatic_forecast": round(auto, 1),
+                "scenario_adjusted": round(adj, 1),
+                "manual_override": float(manual_overrides[category]) if is_manual else None,
+                "effective_forecast": round(eff, 1),
+                "forecast_source": "manual_override" if is_manual else f"automatic ({scenario_name})",
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=(
+            "cruise_product",
+            "automatic_forecast",
+            "scenario_adjusted",
+            "manual_override",
+            "effective_forecast",
+            "forecast_source",
+        ),
+    )
+
+
+def build_overflow_detail_frame(
+    deterministic_result: Mapping[str, Any],
+) -> pd.DataFrame:
+    """Build overflow detail by category."""
+    overflow_bookings = deterministic_result.get("overflow_bookings_by_category", {})
+    overflow_hours = deterministic_result.get("overflow_hours_by_category", {})
+
+    rows = []
+    for category in RESERVATION_CATEGORIES:
+        bk = float(overflow_bookings.get(category, 0.0))
+        hr = float(overflow_hours.get(category, 0.0))
+        rows.append(
+            {
+                "cruise_product": CATEGORY_DISPLAY_LABELS[category],
+                "overflow_bookings": round(bk, 1),
+                "overflow_hours": round(hr, 1),
+            }
+        )
+
+    return pd.DataFrame(
+        rows,
+        columns=("cruise_product", "overflow_bookings", "overflow_hours"),
     )
 
 
@@ -340,7 +458,6 @@ def build_results_export_frames(
     comparison_frame: pd.DataFrame,
 ) -> dict[str, pd.DataFrame]:
     """Collect the most useful structured outputs for CSV export."""
-
     named_plans = application_result["named_plans"]
     narrative = application_result["narrative"]
     return {
@@ -353,13 +470,16 @@ def build_results_export_frames(
     }
 
 
-__all__ = [
-    "build_category_assumptions_frame",
-    "build_methodology_points",
-    "build_results_export_frames",
-    "build_plan_comparison_frame",
-    "build_forecast_display_frame",
-    "build_history_display_frame",
-    "build_recommendation_summary_frame",
-    "build_tradeoff_chart_frames",
-]
+def build_methodology_points() -> tuple[str, ...]:
+    """Return manager-friendly summary points for the recommendation flow."""
+    return (
+        "Validate the shared history and scenario inputs before any staffing calculation begins.",
+        "Build the weekly demand forecast from recent four-week weighted moving average history, "
+        "then apply scenario multipliers for Low, Expected, or High demand.",
+        "Convert forecast demand into weekly workload using category handling times and "
+        "weekly booking-processing hours per agent.",
+        "Apply the operating floor (minimum schedulable agents) and in-house cap "
+        "(maximum in-house agents) to determine recommended staffing.",
+        "Calculate spare capacity or third-party overflow based on in-house capacity vs. demand.",
+        "Compute in-house labor cost, overflow commission, and total weekly operating cost.",
+    )

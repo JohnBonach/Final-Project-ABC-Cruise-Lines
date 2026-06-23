@@ -1,4 +1,4 @@
-"""Reusable Streamlit components for the application shell."""
+"""Reusable Streamlit components for the single-page manager dashboard."""
 
 from __future__ import annotations
 
@@ -9,32 +9,34 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from src.constants import RESERVATION_CATEGORIES
+from src.constants import CATEGORY_DISPLAY_LABELS, RESERVATION_CATEGORIES
 from src.data.loader import build_history_diagnostics, load_and_validate_history
-from src.models import CategoryAssumptions, ConfidenceTargets, SimulationConfiguration, WorkforceAssumptions
 from src.ui.charts import (
     build_category_assumptions_frame,
+    build_deterministic_kpi_frame,
+    build_financial_breakdown_frame,
+    build_forecast_breakdown_frame,
     build_forecast_display_frame,
     build_history_display_frame,
+    build_history_display_frame_with_labels,
     build_methodology_points,
-    build_plan_comparison_frame,
-    build_recommendation_summary_frame,
+    build_overflow_detail_frame,
     build_results_export_frames,
-    build_tradeoff_chart_frames,
+    build_secondary_kpi_frame,
+    build_staffing_capacity_frame,
+    build_workload_breakdown_frame,
 )
 from src.ui.state import (
     category_assumption_key,
-    confidence_target_control_key,
-    confidence_targets_are_ordered,
     decimal_to_percent,
+    initialize_session_state,
     manual_override_enabled_key,
     manual_override_value_key,
     percent_to_decimal,
-    refresh_draft_shell_preferences,
     reset_session_state,
     run_analysis_for_current_draft,
-    section_options,
     simulation_control_key,
+    strategic_control_key,
     update_draft_inputs_from_widgets,
     workforce_control_key,
 )
@@ -44,742 +46,837 @@ BASE_PATH = Path(__file__).resolve().parents[2]
 HISTORY_PATH = BASE_PATH / "data" / "synthetic_history.csv"
 DEFAULTS_PATH = BASE_PATH / "config" / "defaults.json"
 
-FORECAST_MODE_LABELS: dict[str, str] = {
-    "automatic": "Automatic",
-    "manual_override": "Manual override",
+SCENARIO_MULTIPLIERS: dict[str, dict[str, float]] = {
+    "Low Demand": {"demand": 0.85, "variability": 0.75},
+    "Expected Demand": {"demand": 1.00, "variability": 1.00},
+    "High Demand": {"demand": 1.15, "variability": 1.25},
 }
-
-
-def _percent_widget_key(base_key: str) -> str:
-    """Return a widget key for a percent-valued control."""
-
-    return f"{base_key}__percent"
 
 
 @st.cache_data(show_spinner=False)
 def _load_history() -> pd.DataFrame:
-    """Load and validate the shared historical-demand file."""
-
     return load_and_validate_history(HISTORY_PATH)
 
 
 @st.cache_data(show_spinner=False)
 def _load_defaults() -> dict[str, Any]:
-    """Load the validated default configuration file."""
-
     return load_defaults_config(DEFAULTS_PATH)
 
 
-def _render_percent_input(
-    label: str,
-    *,
-    base_key: str,
-    default_decimal: float,
-    help_text: str,
-) -> float:
-    """Render a percent-valued input and return its internal decimal value."""
+# ---------------------------------------------------------------------------
+# CSS injection
+# ---------------------------------------------------------------------------
 
-    widget_key = _percent_widget_key(base_key)
-    st.session_state.setdefault(widget_key, decimal_to_percent(default_decimal))
-    percent_value = st.number_input(
-        label,
-        min_value=0.0,
-        max_value=100.0,
-        step=1.0,
-        format="%.1f",
-        key=widget_key,
-        help=help_text,
+def _inject_dashboard_css() -> None:
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background-color: #F5F7FA;
+        }
+        div[data-testid="stMetric"] {
+            background: #FFFFFF;
+            border-radius: 10px;
+            padding: 14px 18px;
+            border: 1px solid #E0E4E8;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }
+        div[data-testid="stMetricValue"] {
+            font-size: 1.6rem !important;
+            font-weight: 700 !important;
+            color: #1B2838 !important;
+        }
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.82rem !important;
+            color: #5A6C7D !important;
+        }
+        h1, h2, h3 {
+            color: #1B2838;
+        }
+        .hero-card {
+            background: linear-gradient(135deg, #1B2838 0%, #0F3D5C 100%);
+            border-radius: 14px;
+            padding: 32px 36px;
+            margin: 12px 0 24px 0;
+            color: #FFFFFF;
+        }
+        .hero-card h2 {
+            color: #FFFFFF;
+            font-size: 1.1rem;
+            font-weight: 400;
+            opacity: 0.85;
+            margin: 0 0 8px 0;
+        }
+        .hero-card .hero-number {
+            font-size: 3.2rem;
+            font-weight: 800;
+            color: #FFFFFF;
+            line-height: 1.1;
+        }
+        .hero-card .hero-label {
+            font-size: 1.05rem;
+            color: #8AB4D6;
+            margin-top: 4px;
+        }
+        .hero-card .hero-message {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255,255,255,0.15);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #C8DEEF;
+        }
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1B2838;
+            margin: 32px 0 12px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #006994;
+        }
+        button[kind="primary"] {
+            background-color: #006994 !important;
+            border-color: #006994 !important;
+        }
+        button[kind="primary"]:hover {
+            background-color: #005577 !important;
+        }
+        .stButton button {
+            border-radius: 8px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
-    return percent_to_decimal(float(percent_value))
 
 
-def _build_category_assumptions_from_state(session_state: Mapping[str, Any]) -> tuple[CategoryAssumptions, ...]:
-    """Build validated category assumption models from the current widget state."""
+# ---------------------------------------------------------------------------
+# Header
+# ---------------------------------------------------------------------------
 
-    assumptions: list[CategoryAssumptions] = []
-    for category in RESERVATION_CATEGORIES:
-        assumptions.append(
-            CategoryAssumptions(
-                category=category,
-                handling_time_minutes=float(
-                    session_state[category_assumption_key(category, "handling_time_minutes")]
-                ),
-                average_revenue=float(
-                    session_state[category_assumption_key(category, "average_revenue")]
-                ),
-                contribution_per_reservation=float(
-                    session_state[
-                        category_assumption_key(category, "contribution_per_reservation")
-                    ]
-                ),
-            )
+def render_header() -> None:
+    st.markdown(
+        """
+        <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 4px;">
+            <div style="font-size: 2rem;">&#x1F6A2;</div>
+            <div>
+                <h1 style="margin:0; font-size: 1.75rem;">ABC Cruise Lines</h1>
+                <p style="margin:2px 0 0 0; color: #5A6C7D; font-size: 1rem;">
+                    Weekly Reservation Staffing Decision Support System
+                </p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Forecast weekly reservation workload, compare in-house capacity, and plan third-party overflow."
+    )
+    st.divider()
+
+
+# ---------------------------------------------------------------------------
+# Hero recommendation card
+# ---------------------------------------------------------------------------
+
+def _build_hero_message(
+    recommended: int,
+    unconstrained: int,
+    prev_week: int,
+    manager_plan: int,
+    spare_capacity: float,
+    overflow_workload: float,
+    overflow_bookings: dict[str, float],
+    total_workload: float,
+    booking_processing_hours: float,
+    minimum_agents: int,
+) -> str:
+    total_overflow_bk = sum(overflow_bookings.values())
+
+    delta_prev = recommended - prev_week
+    delta_mgr = recommended - manager_plan
+
+    lines: list[str] = []
+
+    if recommended == unconstrained and recommended >= minimum_agents:
+        change_word = "add" if delta_prev > 0 else "remove" if delta_prev < 0 else "no change in"
+        amount = abs(delta_prev)
+        agent_word = "agent" if amount == 1 else "agents"
+        lines.append(
+            f"{'Add' if delta_prev > 0 else 'Remove' if delta_prev < 0 else 'No change from'} "
+            f"{abs(delta_prev)} {agent_word} compared with last week."
         )
-    return tuple(assumptions)
+
+        if delta_mgr != 0:
+            direction = "above" if delta_mgr > 0 else "below"
+            lines.append(
+                f"The manager plan of {manager_plan} agents is {abs(delta_mgr)} agent{'s' if abs(delta_mgr) != 1 else ''} "
+                f"{direction} the modeled requirement."
+            )
+        else:
+            lines.append(f"The manager plan of {manager_plan} agents matches the modeled requirement.")
+    elif recommended < unconstrained and overflow_workload > 0:
+        lines.append(
+            f"Workload requires {unconstrained} agents. "
+            f"Schedule the maximum {recommended} in-house agents and route "
+            f"approximately {round(total_overflow_bk)} bookings to third-party overflow."
+        )
+    else:
+        spare = booking_processing_hours * minimum_agents - total_workload
+        lines.append(
+            f"Workload requires {unconstrained} agents. "
+            f"ABC's assumed operating floor is {minimum_agents} agents, leaving approximately "
+            f"{spare:.1f} booking-processing hours available."
+        )
+
+    if overflow_workload <= 0.0 and recommended >= unconstrained:
+        lines.append("No third-party overflow is expected under the current forecast.")
+
+    return " ".join(lines)
 
 
-def _render_percent_value_from_state(
-    session_state: Mapping[str, Any],
-    *,
-    base_key: str,
-) -> float:
-    """Read a percent-valued widget from session state and convert it to a decimal."""
+def render_hero_card(session_state: Mapping[str, Any]) -> None:
+    application_result = session_state.get("analysis_result")
+    if not application_result:
+        return
 
-    display_key = _percent_widget_key(base_key)
-    raw_value = session_state[display_key]
-    return percent_to_decimal(float(raw_value))
+    deterministic = application_result["deterministic_staffing_result"]
+    effective_forecast = application_result["effective_forecast"]
+    recommended = int(deterministic["recommended_inhouse_agents"])
+    unconstrained = int(deterministic["unconstrained_required_agents"])
+    prev_week = int(_load_history().iloc[-1]["staffing_agents"])
+    applied = session_state.get("applied_inputs", {})
+    manager_plan = int(
+        applied.get("workforce_assumptions", {}).get("planned_staffing_agents", 10)
+    ) if applied else 10
+    minimum_agents = int(
+        applied.get("workforce_assumptions", {}).get("minimum_schedulable_agents", 8)
+    ) if applied else 8
+
+    overflow_workload = float(deterministic["spare_capacity_hours"]) > 0 and float(deterministic["overflow_workload_hours"]) == 0
+
+    spare = float(deterministic["spare_capacity_hours"])
+    overflow = float(deterministic["overflow_workload_hours"])
+    overflow_bookings = deterministic.get("overflow_bookings_by_category", {})
+    total_workload = float(deterministic["total_workload_hours"])
+    booking_processing = float(deterministic["booking_processing_hours_per_agent"])
+
+    message = _build_hero_message(
+        recommended=recommended,
+        unconstrained=unconstrained,
+        prev_week=prev_week,
+        manager_plan=manager_plan,
+        spare_capacity=spare,
+        overflow_workload=overflow,
+        overflow_bookings=overflow_bookings,
+        total_workload=total_workload,
+        booking_processing_hours=booking_processing,
+        minimum_agents=minimum_agents,
+    )
+
+    st.markdown(
+        f"""
+        <div class="hero-card">
+            <h2>Recommended In-House Staffing</h2>
+            <div class="hero-number">{recommended} agents</div>
+            <div class="hero-label">for the upcoming week</div>
+            <div class="hero-message">{message}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# KPI grid
+# ---------------------------------------------------------------------------
+
+def render_kpi_grid(session_state: Mapping[str, Any]) -> None:
+    application_result = session_state.get("analysis_result")
+    if not application_result:
+        return
+
+    deterministic = application_result["deterministic_staffing_result"]
+    effective_forecast = application_result["effective_forecast"]
+    applied = session_state.get("applied_inputs", {}) or {}
+    workforce = applied.get("workforce_assumptions", {})
+
+    total_bookings = sum(effective_forecast.values())
+    workload_hours = float(deterministic["total_workload_hours"])
+    raw_fte = float(deterministic["raw_required_fte"])
+    unconstrained = int(deterministic["unconstrained_required_agents"])
+    recommended = int(deterministic["recommended_inhouse_agents"])
+
+    prev_week = int(_load_history().iloc[-1]["staffing_agents"])
+    manager_plan = int(workforce.get("planned_staffing_agents", 10)) if workforce else 10
+    spare = float(deterministic["spare_capacity_hours"])
+    overflow = float(deterministic["overflow_workload_hours"])
+
+    paid_hours = float(workforce.get("paid_hours_per_agent", 40)) if workforce else 40
+    hourly_wage = float(workforce.get("regular_hourly_wage", 22)) if workforce else 22
+    labor_cost = recommended * paid_hours * hourly_wage
+    total_cost = labor_cost  # overflow commissions are 0 when no overflow from deterministic
+
+    delta_prev = recommended - prev_week
+
+    st.markdown('<p class="section-title">Management KPIs</p>', unsafe_allow_html=True)
+
+    # Primary KPI row
+    col1, col2, col3, col4, col5 = st.columns(5, gap="small")
+    col1.metric("Forecasted Bookings", f"{total_bookings:.1f}", "reservations / week")
+    col2.metric("Forecasted Workload", f"{workload_hours:.1f}", "hours / week")
+    col3.metric("Raw Staffing Need", f"{raw_fte:.2f}", "FTE")
+    col4.metric("Whole-Agent Need", f"{unconstrained}", "agents")
+    col5.metric("Recommended Staffing", f"{recommended}", "agents")
+
+    # Secondary KPI row
+    col1, col2, col3, col4, col5 = st.columns(5, gap="small")
+    col1.metric("Previous-Week Staffing", f"{prev_week}", "agents")
+    col2.metric("Manager-Planned Staffing", f"{manager_plan}", "agents")
+
+    delta_color = "off" if overflow > 0 else "normal"
+    col3.metric(
+        "Change from Prev. Week",
+        f"{delta_prev:+d}",
+        delta=f"{delta_prev:+d} agents",
+    )
+
+    if overflow > 0:
+        col4.metric("Third-Party Overflow", f"{overflow:.1f}", "hours / week")
+    else:
+        col4.metric("Spare Capacity", f"{spare:.1f}", "hours / week")
+
+    col5.metric(
+        "Weekly Operating Cost",
+        f"${total_cost:,.0f}",
+        "USD / week",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Narrative
+# ---------------------------------------------------------------------------
+
+def render_narrative(session_state: Mapping[str, Any]) -> None:
+    application_result = session_state.get("analysis_result")
+    if not application_result:
+        return
+
+    deterministic = application_result["deterministic_staffing_result"]
+    effective_forecast = application_result["effective_forecast"]
+    recommended = int(deterministic["recommended_inhouse_agents"])
+    total_bookings = round(sum(effective_forecast.values()), 1)
+    workload = round(float(deterministic["total_workload_hours"]), 1)
+    raw_fte = round(float(deterministic["raw_required_fte"]), 2)
+    prev_week = int(_load_history().iloc[-1]["staffing_agents"])
+    spare = float(deterministic["spare_capacity_hours"])
+    overflow = float(deterministic["overflow_workload_hours"])
+
+    applied = session_state.get("applied_inputs", {}) or {}
+    workforce = applied.get("workforce_assumptions", {})
+    manager_plan = int(workforce.get("planned_staffing_agents", 10)) if workforce else 10
+    paid_hours = float(workforce.get("paid_hours_per_agent", 40)) if workforce else 40
+    hourly_wage = float(workforce.get("regular_hourly_wage", 22)) if workforce else 22
+    total_cost = recommended * paid_hours * hourly_wage
+
+    delta_prev = recommended - prev_week
+    delta_mgr = recommended - manager_plan
+
+    parts = [
+        f"Schedule **{recommended}** in-house reservation agents for the upcoming week.",
+        f"Forecasted demand is approximately **{total_bookings}** bookings, "
+        f"representing **{workload}** booking-processing hours and **{raw_fte}** FTE.",
+    ]
+
+    if delta_prev > 0:
+        parts.append(
+            f"This recommendation adds **{delta_prev} agent{'s' if delta_prev != 1 else ''}** "
+            f"compared with the previous week"
+        )
+    elif delta_prev < 0:
+        parts.append(
+            f"This recommendation removes **{abs(delta_prev)} agent{'s' if abs(delta_prev) != 1 else ''}** "
+            f"compared with the previous week"
+        )
+    else:
+        parts.append("This matches the previous week's staffing level")
+
+    if delta_mgr > 0:
+        parts.append(
+            f"and **{delta_mgr} agent{'s' if delta_mgr != 1 else ''}** "
+            f"above the manager's current plan."
+        )
+    elif delta_mgr < 0:
+        parts.append(
+            f"and **{abs(delta_mgr)} agent{'s' if abs(delta_mgr) != 1 else ''}** "
+            f"below the manager's current plan."
+        )
+    else:
+        parts.append("and matches the manager's current plan.")
+
+    if overflow > 0:
+        parts.append(
+            "Demand exceeds the 12-agent in-house cap, so third-party overflow is expected."
+        )
+    else:
+        parts.append(
+            "Demand remains within the in-house cap, so no third-party overflow is expected."
+        )
+
+    parts.append(f"The estimated total weekly operating cost is **${total_cost:,.0f}**.")
+
+    st.markdown("#### Recommendation Rationale")
+    st.markdown(". ".join(parts) + ".")
+
+
+# ---------------------------------------------------------------------------
+# Actions
+# ---------------------------------------------------------------------------
+
+def render_action_row(session_state: Mapping[str, Any]) -> None:
+    history = _load_history()
+    defaults = _load_defaults()
+
+    col1, col2, col3, col4 = st.columns([1.2, 1.0, 1.0, 5.0], gap="small")
+
+    with col1:
+        if st.button("Run Analysis", type="primary", use_container_width=True):
+            run_analysis_for_current_draft(
+                st.session_state,
+                history=history,
+                defaults=defaults,
+            )
+            st.rerun()
+
+    with col2:
+        if st.button("Reset to Baseline", use_container_width=True):
+            reset_session_state(
+                st.session_state,
+                history=history,
+                defaults=defaults,
+            )
+            st.rerun()
+
+    with col3:
+        application_result = session_state.get("analysis_result")
+        if application_result:
+            export_frames = build_results_export_frames(
+                application_result,
+                pd.DataFrame(),
+                pd.DataFrame(),
+            )
+            csv_data = export_frames.get("comparison_table", pd.DataFrame()).to_csv(index=False)
+            st.download_button(
+                "Export Summary",
+                data=csv_data,
+                file_name="abc_cruise_staffing_summary.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+    _render_stale_notice(session_state)
+    _render_analysis_error(session_state)
 
 
 def _render_stale_notice(session_state: Mapping[str, Any]) -> None:
-    """Show the stale-results warning when draft inputs differ from applied inputs."""
-
     if session_state.get("results_stale", False):
         st.warning("Inputs have changed. Run the analysis to update the recommendation.")
 
 
 def _render_analysis_error(session_state: Mapping[str, Any]) -> None:
-    """Show the last stored analysis error when present."""
-
     analysis_error = session_state.get("analysis_error")
     if analysis_error:
         st.error(str(analysis_error["message"]))
 
 
-def render_sidebar(session_state: Mapping[str, Any]) -> None:
-    """Render persistent shell controls in the sidebar."""
+# ---------------------------------------------------------------------------
+# Adjust Plan expander
+# ---------------------------------------------------------------------------
 
-    history = _load_history()
+def render_adjust_plan_expander(session_state: Mapping[str, Any]) -> None:
     defaults = _load_defaults()
-    with st.sidebar:
-        st.header("Workspace")
-        st.caption("All sections share one validated orchestration result.")
-        st.radio(
-            "Section",
-            options=section_options(),
-            key="active_section",
-        )
-        st.selectbox(
-            "Reservation category",
-            options=RESERVATION_CATEGORIES,
-            key="selected_category",
-        )
-        st.radio(
-            "Forecast mode",
-            options=("automatic", "manual_override"),
-            key="forecast_mode",
-            format_func=lambda option: FORECAST_MODE_LABELS.get(option, option),
-            horizontal=True,
-        )
-        st.selectbox(
-            "Scenario",
-            options=EXPECTED_SCENARIO_NAMES,
-            key="scenario_label",
-            help="Scenario label used in the comparison and export views.",
-        )
-        st.slider(
-            "Weeks to display",
-            min_value=4,
-            max_value=26,
-            key="weeks_to_display",
-        )
-        st.toggle(
-            "Show contract snapshot",
-            key="show_contract_snapshot",
-        )
-        st.text_area(
-            "Working notes",
-            key="manual_override_notes",
-            height=120,
-            placeholder="Capture assumptions or follow-up items here.",
-        )
-        st.caption("These controls stay in sync with the shared staffing workflow.")
-        st.divider()
-        st.button(
-            "Reset workspace",
-            type="secondary",
-            help="Restore baseline inputs, return to the Overview section, and rerun the baseline analysis.",
-            on_click=reset_session_state,
-            kwargs={"session_state": st.session_state, "history": history, "defaults": defaults},
-        )
-    refresh_draft_shell_preferences(st.session_state)
-
-
-def render_header() -> None:
-    """Render the top-level page heading."""
-
-    st.title("ABC Cruise Lines Reservation Staffing DSS")
-    st.caption(
-        "This weekly staffing workspace turns validated history, manager assumptions, and simulation results into one recommendation."
-    )
-
-
-def render_active_section(session_state: Mapping[str, Any]) -> None:
-    """Render the active content section."""
-
-    active_section = session_state["active_section"]
-    if active_section == "Overview":
-        render_overview(session_state)
-    elif active_section == "Demand Inputs":
-        render_demand_inputs(session_state)
-    elif active_section == "Operations":
-        render_operations(session_state)
-    else:
-        render_results(session_state)
-
-
-def render_overview(session_state: Mapping[str, Any]) -> None:
-    """Render the overview section."""
-
-    left_col, right_col = st.columns((1.4, 1.0), gap="large")
-    with left_col:
-        st.subheader("Application overview")
-        st.write(
-            "This workspace helps a reservation manager review the forecast, operating assumptions, simulation risk, and final staffing recommendation in one place."
-        )
-        st.info(
-            "All visible results come from the shared orchestration pipeline, so the dashboard stays internally consistent and every unit is shown explicitly."
-        )
-    with right_col:
-        st.subheader("Current workspace state")
-        st.metric("Active section", session_state["active_section"])
-        st.metric(
-            "Forecast mode",
-            FORECAST_MODE_LABELS.get(session_state["forecast_mode"], session_state["forecast_mode"]),
-        )
-        st.metric("Focused category", session_state["selected_category"])
-
-    if session_state["show_contract_snapshot"]:
-        st.subheader("Shared contract snapshot")
-        st.json(
-            {
-                "reservation_categories": list(RESERVATION_CATEGORIES),
-                "scenario_label": session_state["scenario_label"],
-                "weeks_to_display": session_state["weeks_to_display"],
-            }
-        )
-
-
-def render_demand_inputs(session_state: Mapping[str, Any]) -> None:
-    """Render validated historical demand and forecast controls."""
-
     history = _load_history()
-    defaults = _load_defaults()
-    forecast_config = defaults["forecast_configuration"]
-    diagnostics = build_history_diagnostics(history)
     application_result = session_state.get("analysis_result")
-    if not application_result:
-        _render_analysis_error(session_state)
-        return
 
-    automatic_forecast = application_result["automatic_forecast"]
+    with st.expander("Adjust Next Week's Plan", expanded=False):
+        st.markdown(
+            "Adjust demand scenarios, staffing plans, and override forecasts. "
+            "Changes are saved as a draft until you run the analysis."
+        )
 
-    st.subheader("Demand Inputs")
-    st.write(
-        "Validated historical demand feeds the automatic forecast. Manual overrides can be enabled independently by category when the manager has better current information."
-    )
-    st.caption(
-        "Automatic forecast uses the validated history and the shared default weights; manual overrides only replace the enabled category and leave the other categories unchanged."
-    )
-
-    top_left, top_center, top_right = st.columns(3, gap="medium")
-    top_left.metric("Historical weeks", diagnostics["week_count"])
-    top_center.metric(
-        "History range",
-        f"{diagnostics['date_range']['start']} to {diagnostics['date_range']['end']}",
-    )
-    top_right.metric("Forecast mode", FORECAST_MODE_LABELS.get(session_state["forecast_mode"], session_state["forecast_mode"]))
-
-    left_col, right_col = st.columns((1.05, 1.25), gap="large")
-    with left_col:
-        with st.container(border=True):
-            st.markdown("**Validated history**")
-            st.caption("The table below is loaded from `data/synthetic_history.csv` after validation.")
-            history_display = build_history_display_frame(
-                history,
-                weeks_to_display=int(session_state["weeks_to_display"]),
-            )
-            st.dataframe(history_display, use_container_width=True)
-
-        with st.expander("History diagnostics", expanded=False):
-            st.json(diagnostics["quality_checks"])
-            st.json(
-                {
-                    "category_summary": diagnostics["category_summary"],
-                    "staffing_summary": diagnostics["staffing_summary"],
-                }
+        with st.form("adjust_plan_form"):
+            st.markdown("#### Scenario")
+            scenario_label = st.selectbox(
+                "Demand scenario",
+                options=EXPECTED_SCENARIO_NAMES,
+                key="scenario_label",
+                help="Low, Expected, or High demand scenario adjusts the automatic forecast.",
             )
 
-    with right_col:
-        with st.container(border=True):
-            st.markdown("**Forecast by category**")
-            st.caption("Automatic, manual, and effective values are shown side by side for each reservation category.")
-            with st.form("demand_inputs_form"):
-                for category in RESERVATION_CATEGORIES:
-                    with st.container(border=True):
-                        st.markdown(f"**{category.replace('_', ' ').title()}**")
-                        category_cols = st.columns((1.0, 1.0))
-                        category_cols[0].metric(
-                            "Automatic forecast",
-                            f"{automatic_forecast[category]:.1f}",
-                        )
-                        manual_enabled = category_cols[1].toggle(
-                            "Enable manual override",
-                            key=manual_override_enabled_key(category),
-                            help="When enabled, the manual forecast replaces only this category's automatic forecast.",
-                        )
-                        st.number_input(
-                            "Manual forecast",
-                            min_value=0.0,
-                            step=1.0,
-                            key=manual_override_value_key(category),
-                            disabled=not manual_enabled,
-                            help="Enter a non-negative weekly reservation forecast. The value is only used when manual override is enabled.",
-                        )
-                action_cols = st.columns(2, gap="medium")
-                save_draft = action_cols[0].form_submit_button("Save Draft")
-                run_analysis = action_cols[1].form_submit_button("Run Analysis", type="primary")
+            st.markdown("#### Manager Plan")
+            manager_staffing = st.number_input(
+                "Manager-planned staffing",
+                min_value=0,
+                max_value=30,
+                step=1,
+                value=int(
+                    session_state.get(
+                        workforce_control_key("planned_staffing_agents"),
+                        defaults["workforce_assumptions"].planned_staffing_agents,
+                    )
+                ),
+                key=workforce_control_key("planned_staffing_agents"),
+                help="Number of agents the manager intends to schedule.",
+            )
+
+            st.markdown("#### Manual Forecast Overrides")
+            if application_result:
+                auto_forecast = application_result["automatic_forecast"]
+                scenario_mult = SCENARIO_MULTIPLIERS[scenario_label]["demand"]
+            else:
+                auto_forecast = {cat: 0.0 for cat in RESERVATION_CATEGORIES}
+                scenario_mult = 1.0
+
+            override_cols = st.columns(len(RESERVATION_CATEGORIES), gap="small")
+            for idx, category in enumerate(RESERVATION_CATEGORIES):
+                with override_cols[idx]:
+                    scenario_adj = auto_forecast.get(category, 0.0) * scenario_mult
+                    st.caption(CATEGORY_DISPLAY_LABELS[category])
+                    st.metric(
+                        "Auto forecast",
+                        f"{scenario_adj:.1f}",
+                    )
+                    manual_enabled = st.toggle(
+                        "Override",
+                        key=manual_override_enabled_key(category),
+                    )
+                    st.number_input(
+                        "Manual value",
+                        min_value=0.0,
+                        step=1.0,
+                        key=manual_override_value_key(category),
+                        disabled=not manual_enabled,
+                    )
+
+            st.markdown("---")
+            save_col, run_col, _ = st.columns([1, 1, 4], gap="small")
+            with save_col:
+                save_draft = st.form_submit_button("Save Draft")
+            with run_col:
+                run_analysis = st.form_submit_button("Run Analysis", type="primary")
 
             if save_draft:
                 update_draft_inputs_from_widgets(st.session_state)
+                st.rerun()
             elif run_analysis:
                 run_analysis_for_current_draft(
                     st.session_state,
                     history=history,
                     defaults=defaults,
                 )
-                application_result = st.session_state.get("analysis_result")
+                st.rerun()
 
-            _render_stale_notice(st.session_state)
-            _render_analysis_error(st.session_state)
-            applied_inputs = session_state.get("applied_inputs", {})
-            applied_manual_overrides = {
-                category: float(item["value"])
-                for category, item in applied_inputs.get("manual_overrides", {}).items()
-                if item["enabled"]
-            }
-            forecast_result = application_result["forecast_result"]
-            forecast_display = build_forecast_display_frame(
-                automatic_forecast,
-                forecast_result,
-                manual_overrides=applied_manual_overrides,
-            )
-            st.dataframe(forecast_display, use_container_width=True)
-            st.bar_chart(
-                forecast_display.set_index("category")[
-                    ["automatic_forecast", "effective_forecast"]
-                ]
-            )
-            st.caption("Forecast source is explicit in the table, and manual overrides remain independent from the automatic forecast.")
-
-        with st.container(border=True):
-            st.markdown("**Default forecast settings**")
-            st.write(f"Weights: `{list(forecast_config.weights)}`")
-            st.write(f"Variability multiplier: `{forecast_config.variability_multiplier}`")
+        render_business_assumptions_expander(session_state, defaults)
 
 
-def render_operations(session_state: Mapping[str, Any]) -> None:
-    """Render the operational and financial control section."""
+def render_business_assumptions_expander(
+    session_state: Mapping[str, Any],
+    defaults: dict[str, Any],
+) -> None:
+    with st.expander("Business Assumptions", expanded=False):
+        st.markdown("Adjust category handling times, workforce parameters, and strategic assumptions.")
 
-    defaults = _load_defaults()
-    history = _load_history()
+        base_cat = defaults["category_assumptions"]
+        base_wf = defaults["workforce_assumptions"]
+        base_strat = defaults["strategic_assumptions"]
 
-    st.subheader("Operations")
-    st.write(
-        "Validated assumption controls cover category economics, workforce capacity, confidence targets, and simulation setup in manager-friendly terms."
-    )
-    st.caption(
-        "Percent-based values are displayed as UI-friendly percentages but converted back to decimals before validation and downstream use."
-    )
-
-    with st.form("operations_form"):
-        category_tab, workforce_tab, simulation_tab = st.tabs(
-            ["Category assumptions", "Workforce and finance", "Confidence and simulation"]
-        )
-
-        with category_tab:
-            st.write("Category assumptions are editable one reservation type at a time.")
-            category_rows: list[dict[str, Any]] = []
-            for category in RESERVATION_CATEGORIES:
-                with st.container(border=True):
-                    st.markdown(f"**{category.replace('_', ' ').title()}**")
-                    value_cols = st.columns(3, gap="small")
-                    handling_time = value_cols[0].number_input(
-                        "Handling time (minutes/reservation)",
-                        min_value=0.1,
-                        step=1.0,
-                        key=category_assumption_key(category, "handling_time_minutes"),
-                        help="Average staff time required to process one reservation in this category.",
-                    )
-                    average_revenue = value_cols[1].number_input(
-                        "Average revenue ($/reservation)",
-                        min_value=0.0,
-                        step=25.0,
-                        key=category_assumption_key(category, "average_revenue"),
-                        help="Gross revenue expected from one reservation before contribution is applied.",
-                    )
-                    contribution = value_cols[2].number_input(
-                        "Contribution ($/reservation)",
-                        min_value=0.0,
-                        step=10.0,
-                        key=category_assumption_key(category, "contribution_per_reservation"),
-                        help="Contribution dollars retained per reservation after direct category costs.",
-                    )
-                    category_rows.append(
-                        {
-                            "category": category,
-                            "handling_time_minutes": float(handling_time),
-                            "average_revenue": float(average_revenue),
-                            "contribution_per_reservation": float(contribution),
-                        }
-                    )
-
-            try:
-                category_assumptions = _build_category_assumptions_from_state(st.session_state)
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
-                st.dataframe(
-                    build_category_assumptions_frame(category_rows),
-                    use_container_width=True,
+        st.markdown("##### Category Assumptions")
+        cat_cols = st.columns(len(RESERVATION_CATEGORIES), gap="small")
+        for idx, category in enumerate(RESERVATION_CATEGORIES):
+            with cat_cols[idx]:
+                base_item = next(
+                    (i for i in base_cat if i.category == category),
+                    None,
                 )
-                st.caption("The table reflects the current controls; the validated model preserves the canonical category order.")
-                st.json([item.to_dict() for item in category_assumptions])
-
-        with workforce_tab:
-            st.write("Workforce controls combine capacity, compensation, and abandonment assumptions.")
-            left_col, right_col = st.columns((1.2, 0.9), gap="large")
-            with left_col:
-                paid_hours_per_agent = st.number_input(
-                    "Paid hours per agent (hours/week)",
-                    min_value=1.0,
+                st.caption(CATEGORY_DISPLAY_LABELS[category])
+                st.number_input(
+                    "Handling time (min)",
+                    min_value=0.1,
                     step=1.0,
-                    key=workforce_control_key("paid_hours_per_agent"),
-                    help="Weekly paid hours available per agent before productivity adjustments.",
+                    key=category_assumption_key(category, "handling_time_minutes"),
+                    help="Average minutes to process one reservation.",
                 )
-                productive_processing_pct = _render_percent_input(
-                    "Productive processing (% of paid hours)",
-                    base_key=workforce_control_key("productive_processing_pct"),
-                    default_decimal=float(defaults["workforce_assumptions"].productive_processing_pct),
-                    help_text="Share of paid hours that can be used for reservation processing.",
-                )
-                regular_hourly_wage = st.number_input(
-                    "Regular hourly wage ($/hour)",
+                st.number_input(
+                    "Avg booking value ($)",
                     min_value=0.0,
-                    step=1.0,
-                    key=workforce_control_key("regular_hourly_wage"),
-                    help="Base hourly wage for regular labor hours.",
-                )
-                overtime_multiplier = st.number_input(
-                    "Overtime multiplier (x)",
-                    min_value=1.0,
-                    step=0.1,
-                    key=workforce_control_key("overtime_multiplier"),
-                    help="Multiplier applied to regular wage when overtime is required.",
-                )
-                abandonment_rate = _render_percent_input(
-                    "Abandonment rate (% of excess demand)",
-                    base_key=workforce_control_key("abandonment_rate"),
-                    default_decimal=float(defaults["workforce_assumptions"].abandonment_rate),
-                    help_text="Share of excess demand assumed to abandon the queue rather than wait.",
-                )
-                planned_staffing_agents = st.number_input(
-                    "Planned staffing (agents)",
-                    min_value=0,
-                    step=1,
-                    key=workforce_control_key("planned_staffing_agents"),
-                    help="Baseline agent count to plan against before the optimizer or staffing simulation runs.",
+                    step=25.0,
+                    key=category_assumption_key(category, "average_booking_value"),
+                    help="Average revenue per booking in this category.",
                 )
 
-            with right_col:
-                try:
-                    workforce_assumptions = WorkforceAssumptions(
-                        paid_hours_per_agent=float(paid_hours_per_agent),
-                        productive_processing_pct=productive_processing_pct,
-                        regular_hourly_wage=float(regular_hourly_wage),
-                        overtime_multiplier=float(overtime_multiplier),
-                        abandonment_rate=abandonment_rate,
-                        planned_staffing_agents=int(planned_staffing_agents),
-                    )
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.markdown("**Current workforce snapshot**")
-                    st.dataframe(
-                        pd.DataFrame(
-                            [
-                                {
-                                    "field": "Paid hours per agent",
-                                    "value": workforce_assumptions.paid_hours_per_agent,
-                                    "units": "hours/week",
-                                },
-                                {
-                                    "field": "Productive processing",
-                                    "value": decimal_to_percent(workforce_assumptions.productive_processing_pct),
-                                    "units": "%",
-                                },
-                                {
-                                    "field": "Regular hourly wage",
-                                    "value": workforce_assumptions.regular_hourly_wage,
-                                    "units": "$/hour",
-                                },
-                                {
-                                    "field": "Overtime multiplier",
-                                    "value": workforce_assumptions.overtime_multiplier,
-                                    "units": "x",
-                                },
-                                {
-                                    "field": "Abandonment rate",
-                                    "value": decimal_to_percent(workforce_assumptions.abandonment_rate),
-                                    "units": "%",
-                                },
-                                {
-                                    "field": "Planned staffing",
-                                    "value": workforce_assumptions.planned_staffing_agents,
-                                    "units": "agents",
-                                },
-                            ]
-                        ),
-                        use_container_width=True,
-                    )
-                    st.caption("Percent fields are stored as decimals in the validated model.")
-
-        with simulation_tab:
-            st.write("Confidence targets and simulation controls are managed together so the target ordering stays visible.")
-            left_col, right_col = st.columns((1.1, 0.9), gap="large")
-            with left_col:
-                lean_target = _render_percent_input(
-                    "Lean confidence target (%)",
-                    base_key=confidence_target_control_key("lean"),
-                    default_decimal=float(defaults["confidence_targets"].lean),
-                    help_text="Lower-confidence staffing target, shown as a percent in the UI but stored internally as a decimal.",
-                )
-                balanced_target = _render_percent_input(
-                    "Balanced confidence target (%)",
-                    base_key=confidence_target_control_key("balanced"),
-                    default_decimal=float(defaults["confidence_targets"].balanced),
-                    help_text="Middle confidence target for the balanced staffing plan.",
-                )
-                conservative_target = _render_percent_input(
-                    "Conservative confidence target (%)",
-                    base_key=confidence_target_control_key("conservative"),
-                    default_decimal=float(defaults["confidence_targets"].conservative),
-                    help_text="Highest confidence target for the conservative staffing plan.",
-                )
-
-                try:
-                    confidence_targets = ConfidenceTargets(
-                        lean=lean_target,
-                        balanced=balanced_target,
-                        conservative=conservative_target,
-                    )
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    if confidence_targets_are_ordered(confidence_targets.to_dict()):
-                        st.success("Confidence targets are ordered Lean <= Balanced <= Conservative.")
-                    else:
-                        st.warning(
-                            "Confidence targets should increase from Lean to Balanced to Conservative; otherwise the named plans become difficult to interpret."
-                        )
-                    st.dataframe(
-                        pd.DataFrame(
-                            [
-                                {
-                                    "plan": "Lean",
-                                    "confidence_target_pct": decimal_to_percent(confidence_targets.lean),
-                                },
-                                {
-                                    "plan": "Balanced",
-                                    "confidence_target_pct": decimal_to_percent(confidence_targets.balanced),
-                                },
-                                {
-                                    "plan": "Conservative",
-                                    "confidence_target_pct": decimal_to_percent(confidence_targets.conservative),
-                                },
-                            ]
-                        ),
-                        use_container_width=True,
-                    )
-
-            with right_col:
-                iterations = st.number_input(
-                    "Simulation iterations",
-                    min_value=1,
-                    step=100,
-                    key=simulation_control_key("iterations"),
-                    help="Number of Monte Carlo repetitions to run when the simulation layer is connected.",
-                )
-                random_seed = st.number_input(
-                    "Random seed",
-                    min_value=0,
-                    step=1,
-                    key=simulation_control_key("random_seed"),
-                    help="Reproducible seed for simulation draws and downstream randomized checks.",
-                )
-                st.caption(
-                    f"Defaults keep the simulation distribution at `{defaults['simulation_configuration'].distribution_name}` with a variability multiplier of `{defaults['simulation_configuration'].variability_multiplier}`."
-                )
-                simulation_configuration = SimulationConfiguration(
-                    iterations=int(iterations),
-                    random_seed=int(random_seed),
-                    variability_multiplier=float(defaults["simulation_configuration"].variability_multiplier),
-                    distribution_name=str(defaults["simulation_configuration"].distribution_name),
-                )
-                st.json(simulation_configuration.to_dict())
-
-        action_cols = st.columns(2, gap="medium")
-        save_draft = action_cols[0].form_submit_button("Save Draft")
-        run_analysis = action_cols[1].form_submit_button("Run Analysis", type="primary")
-
-    if save_draft:
-        update_draft_inputs_from_widgets(st.session_state)
-    elif run_analysis:
-        run_analysis_for_current_draft(
-            st.session_state,
-            history=history,
-            defaults=defaults,
+        st.markdown("##### Workforce Assumptions")
+        wf_col1, wf_col2, wf_col3 = st.columns(3, gap="small")
+        wf_col1.number_input(
+            "Paid hours per agent",
+            min_value=1.0,
+            step=1.0,
+            key=workforce_control_key("paid_hours_per_agent"),
+            help="Weekly paid hours per agent.",
         )
-    _render_stale_notice(st.session_state)
-    _render_analysis_error(st.session_state)
+        wf_col2.number_input(
+            "Booking-processing hrs/agent",
+            min_value=0.1,
+            step=0.5,
+            key=workforce_control_key("weekly_booking_processing_hours_per_agent"),
+            help="Direct booking-processing hours per agent per week.",
+        )
+        wf_col3.number_input(
+            "Hourly labor rate ($)",
+            min_value=0.0,
+            step=1.0,
+            key=workforce_control_key("regular_hourly_wage"),
+            help="Regular hourly wage.",
+        )
+        wf_col1, wf_col2, _ = st.columns(3, gap="small")
+        wf_col1.number_input(
+            "Minimum agents",
+            min_value=0,
+            step=1,
+            key=workforce_control_key("minimum_schedulable_agents"),
+            help="Operating floor - minimum schedulable agents.",
+        )
+        wf_col2.number_input(
+            "Maximum in-house agents",
+            min_value=0,
+            step=1,
+            key=workforce_control_key("maximum_inhouse_agents"),
+            help="In-house capacity cap.",
+        )
+
+        st.markdown("##### Strategic Assumptions")
+        strat_col1, strat_col2 = st.columns(2, gap="small")
+        strat_col1.number_input(
+            "Third-party commission rate (%)",
+            min_value=0.0,
+            max_value=100.0,
+            step=0.5,
+            key=strategic_control_key("third_party_commission_rate"),
+            help="Commission rate paid to third-party booking partners.",
+        )
+        strat_col2.number_input(
+            "In-house capture target (%)",
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            key=strategic_control_key("inhouse_capture_target"),
+            help="Target share of bookings captured in-house.",
+        )
 
 
-def render_results(session_state: Mapping[str, Any]) -> None:
-    """Render the executive recommendation dashboard and comparison views."""
+# ---------------------------------------------------------------------------
+# Analysis Details expander
+# ---------------------------------------------------------------------------
 
-    st.subheader("Results")
-    _render_stale_notice(session_state)
-    _render_analysis_error(session_state)
+def render_analysis_details_expander(session_state: Mapping[str, Any]) -> None:
     application_result = session_state.get("analysis_result")
     if not application_result:
         return
 
+    history = _load_history()
+    deterministic = application_result["deterministic_staffing_result"]
+    effective_forecast = application_result["effective_forecast"]
     financial_recommendation = application_result["financial_recommendation"]
-    comparison_table = application_result["narrative"]["comparison_table"]
-    recommendation_summary = build_recommendation_summary_frame(
-        financial_recommendation,
-        comparison_table,
-    )
-    comparison_frame = build_plan_comparison_frame(comparison_table)
-    tradeoff_frames = build_tradeoff_chart_frames(comparison_table)
+    applied = session_state.get("applied_inputs", {}) or {}
 
-    recommended_staffing = int(financial_recommendation["recommended_staffing_agents"])
-    recommended_record = financial_recommendation["recommended_staffing_record"]
-    summary_values = recommendation_summary.set_index("metric")["value"].to_dict()
+    with st.expander("View Analysis Details", expanded=False):
+        st.markdown("### Historical Demand")
+        hist_display = build_history_display_frame_with_labels(history)
+        st.dataframe(hist_display, use_container_width=True)
 
-    applied_scenario_label = session_state.get("applied_inputs", {}).get("shell", {}).get(
-        "scenario_label",
-        session_state["scenario_label"],
-    )
-    st.write(
-        f"Scenario `{applied_scenario_label}` is active. The dashboard below stays aligned with the orchestration result and updates whenever assumptions change."
-    )
-    with st.container(border=True):
-        st.markdown("**Executive recommendation**")
+        st.markdown("### Historical Demand Chart")
+        chart_data = history.copy()
+        chart_data = chart_data.rename(
+            columns={cat: CATEGORY_DISPLAY_LABELS[cat] for cat in RESERVATION_CATEGORIES}
+        )
+        chart_data["week_start"] = pd.to_datetime(chart_data["week_start"])
+        chart_data = chart_data.set_index("week_start")
+        chart_columns = [CATEGORY_DISPLAY_LABELS[cat] for cat in RESERVATION_CATEGORIES]
+        st.bar_chart(chart_data[chart_columns])
+
+        st.markdown("### Forecast Breakdown")
+        forecast_breakdown = build_forecast_breakdown_frame(
+            application_result["automatic_forecast"],
+            application_result["scenario_adjusted_forecast"],
+            effective_forecast,
+            {
+                cat: float(item["value"])
+                for cat, item in applied.get("manual_overrides", {}).items()
+                if item.get("enabled")
+            }
+            if "manual_overrides" in applied
+            else None,
+            application_result["scenario"]["scenario_name"],
+        )
+        st.dataframe(forecast_breakdown, use_container_width=True)
+
+        st.markdown("### Workload Breakdown")
+        workload_breakdown = build_workload_breakdown_frame(
+            effective_forecast,
+            deterministic,
+            applied.get("category_assumptions", defaults_for_category_labels()),
+        )
+        st.dataframe(workload_breakdown, use_container_width=True)
+
+        st.markdown("### Staffing and Capacity")
+        staffing_frame = build_staffing_capacity_frame(
+            deterministic,
+            applied.get("workforce_assumptions", {}),
+        )
+        st.dataframe(staffing_frame, use_container_width=True)
+
+        if float(deterministic["overflow_workload_hours"]) > 0:
+            st.markdown("### Overflow Detail")
+            overflow_frame = build_overflow_detail_frame(deterministic)
+            st.dataframe(overflow_frame, use_container_width=True)
+
+        st.markdown("### Financial Breakdown")
+        financial_frame = build_financial_breakdown_frame(
+            financial_recommendation,
+            deterministic,
+            applied.get("category_assumptions", defaults_for_category_labels()),
+            applied.get("strategic_assumptions", {"third_party_commission_rate": 0.125}),
+        )
+        st.dataframe(financial_frame, use_container_width=True)
+
+        st.markdown("### Export")
+        export_csv = _build_export_csv(application_result)
+        st.download_button(
+            "Download Full Report (CSV)",
+            data=export_csv,
+            file_name="abc_cruise_full_report.csv",
+            mime="text/csv",
+        )
+
+
+def defaults_for_category_labels() -> list[dict[str, Any]]:
+    defaults = _load_defaults()
+    return [item.to_dict() for item in defaults["category_assumptions"]]
+
+
+def _build_export_csv(application_result: Mapping[str, Any]) -> str:
+    """Build a concise manager-friendly CSV from the result."""
+    deterministic = application_result["deterministic_staffing_result"]
+    effective_forecast = application_result["effective_forecast"]
+    fin_rec = application_result["financial_recommendation"]
+
+    lines = ["metric,value,units"]
+    total_bk = sum(effective_forecast.values())
+    lines.append(f"forecasted_bookings,{total_bk:.1f},bookings/week")
+    lines.append(f"forecasted_workload,{float(deterministic['total_workload_hours']):.1f},hours/week")
+    lines.append(f"raw_fte,{float(deterministic['raw_required_fte']):.2f},FTE")
+    lines.append(f"unconstrained_agents,{int(deterministic['unconstrained_required_agents'])},agents")
+    lines.append(f"recommended_agents,{int(deterministic['recommended_inhouse_agents'])},agents")
+    lines.append(f"spare_capacity,{float(deterministic['spare_capacity_hours']):.1f},hours/week")
+    lines.append(f"overflow_workload,{float(deterministic['overflow_workload_hours']):.1f},hours/week")
+    rec = fin_rec["recommended_staffing_record"]
+    lines.append(f"labor_cost,{float(rec['regular_labor_cost']):.0f},USD/week")
+    lines.append(f"overflow_commission,{float(rec['expected_overflow_commission']):.0f},USD/week")
+    lines.append(f"total_operating_cost,{float(rec['expected_total_weekly_operating_cost']):.0f},USD/week")
+
+    for cat in RESERVATION_CATEGORIES:
+        lines.append(f"forecast_{cat},{effective_forecast[cat]:.1f},bookings/week")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Methodology expander
+# ---------------------------------------------------------------------------
+
+def render_methodology_expander() -> None:
+    with st.expander("Methodology and Advanced Settings", expanded=False):
+        st.markdown("### How the Recommendation Works")
         st.markdown(
-            f"### Schedule {recommended_staffing} reservation agents"
-        )
-        st.caption(
-            "Units are explicit: agents, %, hours per week, reservations per week, and USD per week."
-        )
-
-        top_row = st.columns(4, gap="medium")
-        top_row[0].metric(
-            "Recommended staffing",
-            f"{recommended_staffing} agents",
-            delta=f"{int(summary_values['Difference vs previous week']):+d} vs previous week",
-        )
-        top_row[1].metric(
-            "Capacity confidence",
-            f"{summary_values['Capacity confidence']:.1f}%",
-        )
-        top_row[2].metric(
-            "Expected total economic cost",
-            f"${summary_values['Expected total economic cost']:,.2f} / week",
-        )
-        top_row[3].metric(
-            "Expected overtime",
-            f"{summary_values['Expected overtime']:.1f} hours / week",
-        )
-
-        bottom_row = st.columns(4, gap="medium")
-        bottom_row[0].metric(
-            "Expected abandonment",
-            f"{summary_values['Expected abandonment']:.1f} reservations / week",
-        )
-        bottom_row[1].metric(
-            "Difference vs manager plan",
-            f"{int(summary_values['Difference vs manager plan']):+d} agents",
-        )
-        bottom_row[2].metric(
-            "Weekly overtime hours",
-            f"{recommended_record['expected_overtime_hours']:.1f} hours",
-        )
-        bottom_row[3].metric(
-            "Weekly abandonment",
-            f"{recommended_record['expected_abandoned_total']:.1f} reservations",
-        )
-
-        st.info(application_result["narrative"]["text"])
-        warnings = application_result["narrative"]["warnings"]
-        if warnings:
-            st.warning(" ".join(warnings))
-
-    with st.expander("Methodology", expanded=False):
-        st.write(
-            "This recommendation stays manager-friendly by moving from the latest validated demand to a staffing choice in a few transparent steps."
+            """
+            The staffing recommendation follows a transparent analytical pipeline:
+            """
         )
         for point in build_methodology_points():
             st.markdown(f"- {point}")
-        st.caption(
-            "Manual overrides affect only enabled categories, and the recommendation still compares the same named plans before choosing the lowest-cost option."
+
+        defaults = _load_defaults()
+        fc = defaults["forecast_configuration"]
+        sim = defaults["simulation_configuration"]
+        ct = defaults["confidence_targets"]
+
+        st.markdown("### Forecasting")
+        st.markdown(
+            f"- **Method:** Four-week weighted moving average with weights "
+            f"`[{fc.weights[0]}, {fc.weights[1]}, {fc.weights[2]}, {fc.weights[3]}]` (most recent first)."
+        )
+        st.markdown(
+            f"- **Variability multiplier:** `{sim.variability_multiplier}` "
+            f"(scaled by scenario factor for High/Low demand)."
+        )
+        st.markdown(f"- **Simulation iterations:** `{sim.iterations}`")
+        st.markdown(f"- **Random seed:** `{sim.random_seed}`")
+        st.markdown(f"- **Distribution:** `{sim.distribution_name}`")
+
+        st.markdown("### Capacity")
+        st.markdown(
+            "- **Workload formula:** Forecast bookings × handling time (minutes) → convert to hours."
+        )
+        st.markdown(
+            "- **Capacity formula:** Workload hours ÷ booking-processing hours per agent → FTE → ceil → whole agents."
+        )
+        st.markdown(
+            "- **Operating floor:** Minimum schedulable agents applied as lower bound."
+        )
+        st.markdown(
+            "- **In-house cap:** Maximum in-house agents applied as upper bound; excess routed to third-party overflow."
         )
 
-    st.subheader("Plan comparison")
-    st.caption(
-        "Previous Week, Manager Plan, Lean, Balanced, Conservative, and Financial Recommendation all come from the same orchestration output."
-    )
-    st.dataframe(
-        comparison_frame.reset_index(drop=True),
-        use_container_width=True,
-    )
-
-    chart_cols = st.columns(3, gap="large")
-    with chart_cols[0]:
-        st.markdown("**Expected total economic cost (USD/week)**")
-        st.bar_chart(tradeoff_frames["cost"].set_index("plan_name"))
-    with chart_cols[1]:
-        st.markdown("**Expected overtime (hours/week)**")
-        st.bar_chart(tradeoff_frames["overtime"].set_index("plan_name"))
-    with chart_cols[2]:
-        st.markdown("**Expected abandonment (reservations/week)**")
-        st.bar_chart(tradeoff_frames["abandonment"].set_index("plan_name"))
-
-    with st.expander("Executive summary details", expanded=False):
-        st.dataframe(
-            recommendation_summary.reset_index(drop=True),
-            use_container_width=True,
+        st.markdown("### Overflow Allocation")
+        st.markdown(
+            "- Workload above in-house capacity is allocated proportionally by category workload share."
+        )
+        st.markdown(
+            f"- **Commission rate:** {decimal_to_percent(float(defaults['strategic_assumptions'].third_party_commission_rate)):.1f}% "
+            f"of overflow booking value."
         )
 
-    export_frames = build_results_export_frames(
-        application_result,
-        recommendation_summary,
-        comparison_frame,
+        st.markdown("### Confidence Targets")
+        target_data = {
+            "Plan": ["Lean", "Balanced", "Conservative"],
+            "Confidence": [
+                f"{decimal_to_percent(ct.lean):.0f}%",
+                f"{decimal_to_percent(ct.balanced):.0f}%",
+                f"{decimal_to_percent(ct.conservative):.0f}%",
+            ],
+        }
+        st.dataframe(pd.DataFrame(target_data), use_container_width=True, hide_index=True)
+
+
+# ---------------------------------------------------------------------------
+# Main dashboard orchestrator
+# ---------------------------------------------------------------------------
+
+def render_main_dashboard() -> None:
+    _inject_dashboard_css()
+    render_header()
+
+    history = _load_history()
+    defaults = _load_defaults()
+    initialize_session_state(
+        st.session_state,
+        history=history,
+        defaults=defaults,
     )
-    export_labels = {
-        "forecast_result": "Forecast result",
-        "staffing_evaluation_table": "Staffing evaluation",
-        "named_plan_table": "Named plan table",
-        "comparison_table": "Comparison table",
-        "plan_comparison_display": "Plan comparison display",
-        "recommendation_summary": "Executive summary",
-    }
-    with st.expander("Export", expanded=False):
-        st.write("Download the structured outputs as CSV for reporting, audit, or downstream analysis.")
-        export_cols = st.columns(2, gap="medium")
-        for index, (name, frame) in enumerate(export_frames.items()):
-            export_cols[index % 2].download_button(
-                export_labels[name],
-                data=frame.to_csv(index=False),
-                file_name=f"{name}.csv",
-                mime="text/csv",
-                key=f"export_{name}",
-            )
+
+    render_hero_card(st.session_state)
+    render_kpi_grid(st.session_state)
+    render_narrative(st.session_state)
+    render_action_row(st.session_state)
+    render_adjust_plan_expander(st.session_state)
+    render_analysis_details_expander(st.session_state)
+    render_methodology_expander()

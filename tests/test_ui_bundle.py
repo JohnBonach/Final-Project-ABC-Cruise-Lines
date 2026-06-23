@@ -1,4 +1,4 @@
-"""Focused tests for the Streamlit UI helper layer."""
+"""Focused tests for the redesigned single-page dashboard UI layer."""
 
 from __future__ import annotations
 
@@ -15,33 +15,43 @@ from src.models import (
     ConfidenceTargets,
     ForecastConfiguration,
     SimulationConfiguration,
+    StrategicAssumptions,
     WorkforceAssumptions,
 )
-from src.orchestration import build_application_result
 from src.validation import FieldValidationError
 from src.ui.charts import (
+    build_category_assumptions_frame,
+    build_deterministic_kpi_frame,
+    build_financial_breakdown_frame,
+    build_forecast_breakdown_frame,
     build_forecast_display_frame,
     build_history_display_frame,
+    build_history_display_frame_with_labels,
     build_methodology_points,
-    build_plan_comparison_frame,
-    build_recommendation_summary_frame,
+    build_overflow_detail_frame,
     build_results_export_frames,
-    build_tradeoff_chart_frames,
+    build_secondary_kpi_frame,
+    build_staffing_capacity_frame,
+    build_workload_breakdown_frame,
 )
-from src.ui import components
 from src.ui.state import (
     build_manual_overrides_from_state,
+    build_baseline_inputs,
     confidence_targets_are_ordered,
+    collect_draft_inputs_from_widgets,
     decimal_to_percent,
     initialize_session_state,
     manual_override_enabled_key,
     manual_override_value_key,
-    refresh_draft_shell_preferences,
     percent_to_decimal,
     reset_session_state,
     run_analysis_for_current_draft,
+    strategic_control_key,
+    sync_widgets_from_draft,
     update_draft_inputs_from_widgets,
+    workforce_control_key,
 )
+from src.constants import CATEGORY_DISPLAY_LABELS
 
 
 class UICoordinateHelpersTests(unittest.TestCase):
@@ -49,40 +59,100 @@ class UICoordinateHelpersTests(unittest.TestCase):
         return pd.DataFrame(
             [
                 {
-                    "week_id": "2026-W01",
-                    "week_start": "2025-12-29",
-                    "simple": 18,
-                    "standard": 26,
-                    "complex_group": 8,
-                    "change_cancellation": 4,
-                    "staffing_agents": 7,
-                },
-                {
-                    "week_id": "2026-W02",
-                    "week_start": "2026-01-05",
-                    "simple": 20,
-                    "standard": 27,
-                    "complex_group": 9,
-                    "change_cancellation": 5,
-                    "staffing_agents": 7,
-                },
-                {
-                    "week_id": "2026-W03",
-                    "week_start": "2026-01-12",
-                    "simple": 19,
-                    "standard": 28,
-                    "complex_group": 9,
-                    "change_cancellation": 5,
+                    "week_id": "2026-W15",
+                    "week_start": "2026-04-06",
+                    "day_cruise": 150,
+                    "seven_night_cruise": 95,
+                    "nine_night_cruise": 45,
                     "staffing_agents": 8,
                 },
                 {
-                    "week_id": "2026-W04",
-                    "week_start": "2026-01-19",
-                    "simple": 21,
-                    "standard": 29,
-                    "complex_group": 10,
-                    "change_cancellation": 6,
+                    "week_id": "2026-W16",
+                    "week_start": "2026-04-13",
+                    "day_cruise": 165,
+                    "seven_night_cruise": 100,
+                    "nine_night_cruise": 50,
                     "staffing_agents": 8,
+                },
+                {
+                    "week_id": "2026-W17",
+                    "week_start": "2026-04-20",
+                    "day_cruise": 175,
+                    "seven_night_cruise": 105,
+                    "nine_night_cruise": 50,
+                    "staffing_agents": 8,
+                },
+                {
+                    "week_id": "2026-W18",
+                    "week_start": "2026-04-27",
+                    "day_cruise": 160,
+                    "seven_night_cruise": 92,
+                    "nine_night_cruise": 43,
+                    "staffing_agents": 8,
+                },
+                {
+                    "week_id": "2026-W19",
+                    "week_start": "2026-05-04",
+                    "day_cruise": 180,
+                    "seven_night_cruise": 110,
+                    "nine_night_cruise": 55,
+                    "staffing_agents": 8,
+                },
+                {
+                    "week_id": "2026-W20",
+                    "week_start": "2026-05-11",
+                    "day_cruise": 155,
+                    "seven_night_cruise": 98,
+                    "nine_night_cruise": 47,
+                    "staffing_agents": 8,
+                },
+                {
+                    "week_id": "2026-W21",
+                    "week_start": "2026-05-18",
+                    "day_cruise": 145,
+                    "seven_night_cruise": 90,
+                    "nine_night_cruise": 45,
+                    "staffing_agents": 8,
+                },
+                {
+                    "week_id": "2026-W22",
+                    "week_start": "2026-05-25",
+                    "day_cruise": 190,
+                    "seven_night_cruise": 120,
+                    "nine_night_cruise": 60,
+                    "staffing_agents": 8,
+                },
+                {
+                    "week_id": "2026-W23",
+                    "week_start": "2026-06-01",
+                    "day_cruise": 210,
+                    "seven_night_cruise": 135,
+                    "nine_night_cruise": 70,
+                    "staffing_agents": 9,
+                },
+                {
+                    "week_id": "2026-W24",
+                    "week_start": "2026-06-08",
+                    "day_cruise": 230,
+                    "seven_night_cruise": 150,
+                    "nine_night_cruise": 80,
+                    "staffing_agents": 10,
+                },
+                {
+                    "week_id": "2026-W25",
+                    "week_start": "2026-06-15",
+                    "day_cruise": 300,
+                    "seven_night_cruise": 200,
+                    "nine_night_cruise": 130,
+                    "staffing_agents": 12,
+                },
+                {
+                    "week_id": "2026-W26",
+                    "week_start": "2026-06-22",
+                    "day_cruise": 195,
+                    "seven_night_cruise": 125,
+                    "nine_night_cruise": 70,
+                    "staffing_agents": 9,
                 },
             ]
         )
@@ -91,37 +161,32 @@ class UICoordinateHelpersTests(unittest.TestCase):
         return {
             "category_assumptions": (
                 CategoryAssumptions(
-                    category="simple",
-                    handling_time_minutes=15.0,
-                    average_revenue=400.0,
-                    contribution_per_reservation=80.0,
+                    category="day_cruise",
+                    handling_time_minutes=8.0,
+                    average_booking_value=500.0,
                 ),
                 CategoryAssumptions(
-                    category="standard",
-                    handling_time_minutes=35.0,
-                    average_revenue=1800.0,
-                    contribution_per_reservation=360.0,
+                    category="seven_night_cruise",
+                    handling_time_minutes=22.0,
+                    average_booking_value=2200.0,
                 ),
                 CategoryAssumptions(
-                    category="complex_group",
-                    handling_time_minutes=75.0,
-                    average_revenue=6000.0,
-                    contribution_per_reservation=1200.0,
-                ),
-                CategoryAssumptions(
-                    category="change_cancellation",
-                    handling_time_minutes=20.0,
-                    average_revenue=75.0,
-                    contribution_per_reservation=25.0,
+                    category="nine_night_cruise",
+                    handling_time_minutes=28.0,
+                    average_booking_value=2800.0,
                 ),
             ),
             "workforce_assumptions": WorkforceAssumptions(
                 paid_hours_per_agent=40.0,
-                productive_processing_pct=0.85,
+                weekly_booking_processing_hours_per_agent=12.5,
                 regular_hourly_wage=22.0,
-                overtime_multiplier=1.5,
-                abandonment_rate=0.10,
-                planned_staffing_agents=9,
+                minimum_schedulable_agents=8,
+                maximum_inhouse_agents=12,
+                planned_staffing_agents=10,
+            ),
+            "strategic_assumptions": StrategicAssumptions(
+                third_party_commission_rate=0.125,
+                inhouse_capture_target=0.50,
             ),
             "forecast_configuration": ForecastConfiguration(
                 weights=(0.4, 0.3, 0.2, 0.1),
@@ -151,7 +216,7 @@ class UICoordinateHelpersTests(unittest.TestCase):
     def test_percent_round_trip_uses_ui_display_and_internal_decimal_values(self) -> None:
         self.assertEqual(decimal_to_percent(0.85), 85.0)
         self.assertAlmostEqual(percent_to_decimal(85.0), 0.85)
-        self.assertAlmostEqual(percent_to_decimal(decimal_to_percent(0.03)), 0.03)
+        self.assertAlmostEqual(percent_to_decimal(decimal_to_percent(0.125)), 0.125)
 
     def test_confidence_targets_are_ordered_helper_matches_expected_direction(self) -> None:
         self.assertTrue(
@@ -167,15 +232,18 @@ class UICoordinateHelpersTests(unittest.TestCase):
 
     def test_manual_overrides_helper_respects_toggle_and_blocks_invalid_values(self) -> None:
         state = {
-            manual_override_enabled_key("simple"): True,
-            manual_override_value_key("simple"): 18.0,
-            manual_override_enabled_key("standard"): False,
-            manual_override_value_key("standard"): 99.0,
+            manual_override_enabled_key("day_cruise"): True,
+            manual_override_value_key("day_cruise"): 18.0,
+            manual_override_enabled_key("seven_night_cruise"): False,
+            manual_override_value_key("seven_night_cruise"): 99.0,
         }
 
-        self.assertEqual(build_manual_overrides_from_state(state), {"simple": 18.0})
+        self.assertEqual(
+            build_manual_overrides_from_state(state),
+            {"day_cruise": 18.0},
+        )
 
-        state[manual_override_value_key("simple")] = -1.0
+        state[manual_override_value_key("day_cruise")] = -1.0
         with self.assertRaisesRegex(ValueError, "non-negative"):
             build_manual_overrides_from_state(state)
 
@@ -189,26 +257,45 @@ class UICoordinateHelpersTests(unittest.TestCase):
         self.assertIsNone(state["analysis_error"])
         self.assertTrue(state["analysis_result"]["ok"])
 
+        # Verify baseline forecast values
+        self.assertAlmostEqual(
+            state["analysis_result"]["automatic_forecast"]["day_cruise"],
+            235.0,
+        )
+        self.assertAlmostEqual(
+            state["analysis_result"]["automatic_forecast"]["seven_night_cruise"],
+            153.5,
+        )
+        self.assertAlmostEqual(
+            state["analysis_result"]["automatic_forecast"]["nine_night_cruise"],
+            90.0,
+        )
+
     def test_draft_change_marks_results_stale_without_replacing_applied_inputs(self) -> None:
         state, _, _ = self._build_initialized_state()
         original_applied_inputs = state["applied_inputs"]
         original_result = state["analysis_result"]
 
-        state[manual_override_enabled_key("simple")] = True
-        state[manual_override_value_key("simple")] = 99.0
+        state[manual_override_enabled_key("day_cruise")] = True
+        state[manual_override_value_key("day_cruise")] = 99.0
         update_draft_inputs_from_widgets(state)
 
         self.assertTrue(state["results_stale"])
         self.assertEqual(state["applied_inputs"], original_applied_inputs)
         self.assertIs(state["analysis_result"], original_result)
-        self.assertTrue(state["draft_inputs"]["manual_overrides"]["simple"]["enabled"])
-        self.assertEqual(state["draft_inputs"]["manual_overrides"]["simple"]["value"], 99.0)
+        self.assertTrue(
+            state["draft_inputs"]["manual_overrides"]["day_cruise"]["enabled"]
+        )
+        self.assertEqual(
+            state["draft_inputs"]["manual_overrides"]["day_cruise"]["value"],
+            99.0,
+        )
 
     def test_run_analysis_applies_draft_and_updates_stored_result(self) -> None:
         state, history, defaults = self._build_initialized_state()
 
-        state[manual_override_enabled_key("simple")] = True
-        state[manual_override_value_key("simple")] = 99.0
+        state[manual_override_enabled_key("day_cruise")] = True
+        state[manual_override_value_key("day_cruise")] = 99.0
         update_draft_inputs_from_widgets(state)
         run_analysis_for_current_draft(state, history=history, defaults=defaults)
 
@@ -216,84 +303,62 @@ class UICoordinateHelpersTests(unittest.TestCase):
         self.assertIsNone(state["analysis_error"])
         self.assertEqual(state["draft_inputs"], state["applied_inputs"])
         self.assertEqual(
-            state["applied_inputs"]["manual_overrides"]["simple"],
+            state["applied_inputs"]["manual_overrides"]["day_cruise"],
             {"enabled": True, "value": 99.0},
         )
-        simple_forecast = state["analysis_result"]["forecast_result"].loc[
-            lambda frame: frame["category"] == "simple",
+        day_forecast = state["analysis_result"]["forecast_result"].loc[
+            lambda frame: frame["category"] == "day_cruise",
             "point_forecast",
         ].iloc[0]
-        self.assertEqual(float(simple_forecast), 99.0)
+        self.assertEqual(float(day_forecast), 99.0)
 
-    def test_navigation_change_does_not_touch_draft_applied_or_result(self) -> None:
-        state, _, _ = self._build_initialized_state()
-        draft_before = state["draft_inputs"]
-        applied_before = state["applied_inputs"]
-        result_before = state["analysis_result"]
-
-        state["active_section"] = "Operations"
-
-        self.assertEqual(state["draft_inputs"], draft_before)
-        self.assertEqual(state["applied_inputs"], applied_before)
-        self.assertIs(state["analysis_result"], result_before)
-
-    def test_shell_preference_change_marks_results_stale_without_touching_navigation(self) -> None:
+    def test_scenario_change_marks_results_stale(self) -> None:
         state, _, _ = self._build_initialized_state()
 
-        state["active_section"] = "Results"
         state["scenario_label"] = "High Demand"
-        refresh_draft_shell_preferences(state)
+        state[manual_override_enabled_key("day_cruise")] = False
+        state[manual_override_value_key("day_cruise")] = 0.0
+        update_draft_inputs_from_widgets(state)
 
-        self.assertEqual(state["active_section"], "Results")
         self.assertTrue(state["results_stale"])
-        self.assertEqual(state["draft_inputs"]["shell"]["scenario_label"], "High Demand")
-        self.assertEqual(state["applied_inputs"]["shell"]["scenario_label"], "Expected Demand")
+        self.assertEqual(
+            state["draft_inputs"]["shell"]["scenario_label"],
+            "High Demand",
+        )
 
     def test_reset_restores_baseline_inputs_and_a_clean_result(self) -> None:
         state, history, defaults = self._build_initialized_state()
 
-        state["active_section"] = "Results"
         state["scenario_label"] = "High Demand"
-        state["selected_category"] = "complex_group"
-        state["weeks_to_display"] = 4
-        state["show_contract_snapshot"] = True
-        state["manual_override_notes"] = "test note"
-        state[manual_override_enabled_key("simple")] = True
-        state[manual_override_value_key("simple")] = 99.0
+        state[manual_override_enabled_key("day_cruise")] = True
+        state[manual_override_value_key("day_cruise")] = 99.0
         update_draft_inputs_from_widgets(state)
         reset_session_state(state, history=history, defaults=defaults)
 
-        self.assertEqual(state["active_section"], "Overview")
-        self.assertEqual(state["selected_category"], RESERVATION_CATEGORIES[0])
         self.assertEqual(state["scenario_label"], "Expected Demand")
-        self.assertEqual(state["weeks_to_display"], 12)
-        self.assertFalse(state["show_contract_snapshot"])
-        self.assertEqual(state["manual_override_notes"], "")
         self.assertFalse(state["results_stale"])
         self.assertEqual(state["draft_inputs"], state["baseline_inputs"])
         self.assertEqual(state["applied_inputs"], state["baseline_inputs"])
         self.assertIsNone(state["analysis_error"])
         self.assertTrue(state["analysis_result"]["ok"])
 
-    def test_methodology_points_summarize_the_recommendation_flow(self) -> None:
+    def test_methodology_points_cover_the_staffing_pipeline(self) -> None:
         points = build_methodology_points()
 
-        self.assertEqual(len(points), 5)
+        self.assertEqual(len(points), 6)
         joined = " ".join(points)
-        self.assertIn("manual overrides", joined)
-        self.assertIn("weekly demand forecast", joined)
-        self.assertIn("lowest expected weekly economic cost", joined)
+        self.assertIn("four-week weighted moving average", joined)
+        self.assertIn("operating floor", joined)
+        self.assertIn("third-party overflow", joined)
+        self.assertIn("commission", joined)
 
     def test_history_display_frame_rejects_missing_required_columns(self) -> None:
         history = pd.DataFrame(
             [
                 {
-                    "week_id": "2026-W01",
-                    "week_start": "2025-12-29",
-                    "simple": 10,
-                    "standard": 20,
-                    "complex_group": 30,
-                    "change_cancellation": 40,
+                    "week_id": "2026-W15",
+                    "week_start": "2026-04-06",
+                    "day_cruise": 150,
                 }
             ]
         )
@@ -301,46 +366,92 @@ class UICoordinateHelpersTests(unittest.TestCase):
         with self.assertRaisesRegex(FieldValidationError, "missing required columns"):
             build_history_display_frame(history)
 
+    def test_strategic_assumptions_in_draft_payload(self) -> None:
+        state, _, _ = self._build_initialized_state()
+
+        draft = state["draft_inputs"]
+        self.assertIn("strategic_assumptions", draft)
+        self.assertAlmostEqual(
+            draft["strategic_assumptions"]["third_party_commission_rate"],
+            0.125,
+        )
+        self.assertAlmostEqual(
+            draft["strategic_assumptions"]["inhouse_capture_target"],
+            0.50,
+        )
+
+    def test_no_obsolete_fields_in_collected_draft(self) -> None:
+        state, _, _ = self._build_initialized_state()
+
+        draft = collect_draft_inputs_from_widgets(state)
+        workforce = draft["workforce_assumptions"]
+
+        self.assertIn("weekly_booking_processing_hours_per_agent", workforce)
+        self.assertIn("minimum_schedulable_agents", workforce)
+        self.assertIn("maximum_inhouse_agents", workforce)
+        self.assertNotIn("productive_processing_pct", workforce)
+        self.assertNotIn("overtime_multiplier", workforce)
+        self.assertNotIn("abandonment_rate", workforce)
+
+        cat = draft["category_assumptions"][0]
+        self.assertIn("average_booking_value", cat)
+        self.assertNotIn("average_revenue", cat)
+        self.assertNotIn("contribution_per_reservation", cat)
+
+    def test_all_twelve_historical_weeks_present(self) -> None:
+        state, history, _ = self._build_initialized_state()
+        self.assertEqual(len(history), 12)
+
+    def test_baseline_deterministic_values_match_approved(self) -> None:
+        state, _, _ = self._build_initialized_state()
+        d = state["analysis_result"]["deterministic_staffing_result"]
+
+        self.assertAlmostEqual(d["total_workload_hours"], 129.62, places=1)
+        self.assertAlmostEqual(d["raw_required_fte"], 10.37, places=1)
+        self.assertEqual(d["unconstrained_required_agents"], 11)
+        self.assertEqual(d["recommended_inhouse_agents"], 11)
+        self.assertAlmostEqual(d["overflow_workload_hours"], 0.0)
+
+        # Verify labor cost: 11 * 40 * 22 = 9680
+        labor_cost = 11 * 40 * 22
+        self.assertEqual(labor_cost, 9680)
+
 
 class UIForecastDisplayTests(unittest.TestCase):
     def _build_history(self) -> pd.DataFrame:
         return pd.DataFrame(
             [
                 {
-                    "week_id": "2026-W01",
-                    "week_start": "2025-12-29",
-                    "simple": 10,
-                    "standard": 20,
-                    "complex_group": 30,
-                    "change_cancellation": 40,
-                    "staffing_agents": 5,
+                    "week_id": "2026-W15",
+                    "week_start": "2026-04-06",
+                    "day_cruise": 150,
+                    "seven_night_cruise": 95,
+                    "nine_night_cruise": 45,
+                    "staffing_agents": 8,
                 },
                 {
-                    "week_id": "2026-W02",
-                    "week_start": "2026-01-05",
-                    "simple": 11,
-                    "standard": 21,
-                    "complex_group": 31,
-                    "change_cancellation": 41,
-                    "staffing_agents": 5,
+                    "week_id": "2026-W16",
+                    "week_start": "2026-04-13",
+                    "day_cruise": 165,
+                    "seven_night_cruise": 100,
+                    "nine_night_cruise": 50,
+                    "staffing_agents": 8,
                 },
                 {
-                    "week_id": "2026-W03",
-                    "week_start": "2026-01-12",
-                    "simple": 12,
-                    "standard": 22,
-                    "complex_group": 32,
-                    "change_cancellation": 42,
-                    "staffing_agents": 6,
+                    "week_id": "2026-W17",
+                    "week_start": "2026-04-20",
+                    "day_cruise": 175,
+                    "seven_night_cruise": 105,
+                    "nine_night_cruise": 50,
+                    "staffing_agents": 8,
                 },
                 {
-                    "week_id": "2026-W04",
-                    "week_start": "2026-01-19",
-                    "simple": 13,
-                    "standard": 23,
-                    "complex_group": 33,
-                    "change_cancellation": 43,
-                    "staffing_agents": 6,
+                    "week_id": "2026-W18",
+                    "week_start": "2026-04-27",
+                    "day_cruise": 160,
+                    "seven_night_cruise": 92,
+                    "nine_night_cruise": 43,
+                    "staffing_agents": 8,
                 },
             ]
         )
@@ -351,16 +462,27 @@ class UIForecastDisplayTests(unittest.TestCase):
         display = build_history_display_frame(history, weeks_to_display=2)
 
         self.assertEqual(len(display), 2)
-        self.assertEqual(tuple(display.columns), (
-            "week_id",
-            "week_start",
-            "simple",
-            "standard",
-            "complex_group",
-            "change_cancellation",
-            "staffing_agents",
-        ))
-        self.assertEqual(display["week_start"].tolist(), ["2026-01-12", "2026-01-19"])
+        self.assertEqual(
+            tuple(display.columns),
+            (
+                "week_id",
+                "week_start",
+                "day_cruise",
+                "seven_night_cruise",
+                "nine_night_cruise",
+                "staffing_agents",
+            ),
+        )
+        self.assertEqual(display["week_start"].tolist(), ["2026-04-20", "2026-04-27"])
+
+    def test_history_display_with_labels_uses_human_readable_names(self) -> None:
+        history = self._build_history()
+
+        display = build_history_display_frame_with_labels(history)
+
+        self.assertIn(CATEGORY_DISPLAY_LABELS["day_cruise"], display.columns)
+        self.assertIn(CATEGORY_DISPLAY_LABELS["seven_night_cruise"], display.columns)
+        self.assertIn(CATEGORY_DISPLAY_LABELS["nine_night_cruise"], display.columns)
 
     def test_forecast_display_frame_shows_automatic_manual_and_effective_values(self) -> None:
         history = self._build_history()
@@ -369,14 +491,14 @@ class UIForecastDisplayTests(unittest.TestCase):
             history,
             weights,
             variability_multiplier=1.0,
-            manual_overrides={"standard": 99.0},
+            manual_overrides={"seven_night_cruise": 99.0},
         )
         automatic = calculate_weighted_moving_average(history, weights)
 
         display = build_forecast_display_frame(
             automatic,
             forecast_result,
-            manual_overrides={"standard": 99.0},
+            manual_overrides={"seven_night_cruise": 99.0},
         )
 
         self.assertEqual(tuple(display["category"]), RESERVATION_CATEGORIES)
@@ -393,7 +515,7 @@ class UIForecastDisplayTests(unittest.TestCase):
                 "adjusted_std",
             ),
         )
-        self.assertEqual(display.loc[0, "automatic_forecast"], automatic["simple"])
+        self.assertEqual(display.loc[0, "automatic_forecast"], automatic["day_cruise"])
         self.assertTrue(pd.isna(display.loc[0, "manual_override"]))
         self.assertEqual(display.loc[1, "manual_override"], 99.0)
         self.assertEqual(display.loc[1, "forecast_source"], "manual_override")
@@ -403,404 +525,208 @@ class UIForecastDisplayTests(unittest.TestCase):
     def test_forecast_display_frame_rejects_missing_category_rows(self) -> None:
         history = self._build_history()
         weights = [0.4, 0.3, 0.2, 0.1]
-        forecast_result = assemble_forecast_result(history, weights, variability_multiplier=1.0)
+        forecast_result = assemble_forecast_result(
+            history, weights, variability_multiplier=1.0
+        )
         incomplete_result = forecast_result.loc[
-            forecast_result["category"] != "change_cancellation"
+            forecast_result["category"] != "nine_night_cruise"
         ].reset_index(drop=True)
         automatic = calculate_weighted_moving_average(history, weights)
 
         with self.assertRaisesRegex(FieldValidationError, "required categories"):
             build_forecast_display_frame(automatic, incomplete_result)
 
-    def test_forecast_display_frame_rejects_missing_automatic_category_values(self) -> None:
-        history = self._build_history()
-        weights = [0.4, 0.3, 0.2, 0.1]
-        forecast_result = assemble_forecast_result(history, weights, variability_multiplier=1.0)
-        automatic = calculate_weighted_moving_average(history, weights)
-        automatic.pop("simple")
 
-        with self.assertRaisesRegex(FieldValidationError, "automatic_forecast"):
-            build_forecast_display_frame(automatic, forecast_result)
-
-
-class UIRecommendationDisplayTests(unittest.TestCase):
-    def _build_comparison_table(self) -> pd.DataFrame:
-        return pd.DataFrame(
-            [
-                {
-                    "plan_name": "Previous Week",
-                    "staffing_agents": 8,
-                    "capacity_confidence": 0.74,
-                    "expected_overtime_hours": 4.2,
-                    "expected_abandoned_total": 3.6,
-                    "expected_total_economic_cost": 420.0,
-                },
-                {
-                    "plan_name": "Manager Plan",
-                    "staffing_agents": 9,
-                    "capacity_confidence": 0.81,
-                    "expected_overtime_hours": 3.0,
-                    "expected_abandoned_total": 2.4,
-                    "expected_total_economic_cost": 405.0,
-                },
-                {
-                    "plan_name": "Lean",
-                    "staffing_agents": 8,
-                    "capacity_confidence": 0.76,
-                    "expected_overtime_hours": 4.0,
-                    "expected_abandoned_total": 3.0,
-                    "expected_total_economic_cost": 412.0,
-                },
-                {
-                    "plan_name": "Balanced",
-                    "staffing_agents": 9,
-                    "capacity_confidence": 0.84,
-                    "expected_overtime_hours": 2.6,
-                    "expected_abandoned_total": 2.0,
-                    "expected_total_economic_cost": 398.0,
-                },
-                {
-                    "plan_name": "Conservative",
-                    "staffing_agents": 10,
-                    "capacity_confidence": 0.90,
-                    "expected_overtime_hours": 1.7,
-                    "expected_abandoned_total": 1.0,
-                    "expected_total_economic_cost": 401.5,
-                },
-                {
-                    "plan_name": "Financial Recommendation",
-                    "staffing_agents": 10,
-                    "capacity_confidence": 0.90,
-                    "expected_overtime_hours": 1.7,
-                    "expected_abandoned_total": 1.0,
-                    "expected_total_economic_cost": 401.5,
-                },
-            ]
-        )
-
-    def _build_recommendation(self) -> dict[str, object]:
+class UINewChartHelperTests(unittest.TestCase):
+    def _build_deterministic_result(self) -> dict[str, object]:
         return {
-            "recommended_staffing_agents": 10,
+            "total_workload_hours": 129.6167,
+            "raw_required_fte": 10.3693,
+            "unconstrained_required_agents": 11,
+            "recommended_inhouse_agents": 11,
+            "spare_capacity_hours": 7.8833,
+            "overflow_workload_hours": 0.0,
+            "workload_hours_by_category": {
+                "day_cruise": 235.0 * 8 / 60,
+                "seven_night_cruise": 153.5 * 22 / 60,
+                "nine_night_cruise": 90.0 * 28 / 60,
+            },
+            "booking_processing_hours_per_agent": 12.5,
+            "overflow_bookings_by_category": {
+                "day_cruise": 0.0,
+                "seven_night_cruise": 0.0,
+                "nine_night_cruise": 0.0,
+            },
+            "overflow_hours_by_category": {
+                "day_cruise": 0.0,
+                "seven_night_cruise": 0.0,
+                "nine_night_cruise": 0.0,
+            },
+        }
+
+    def _build_effective_forecast(self) -> dict[str, float]:
+        return {
+            "day_cruise": 235.0,
+            "seven_night_cruise": 153.5,
+            "nine_night_cruise": 90.0,
+        }
+
+    def _build_category_assumptions(self) -> list[dict[str, object]]:
+        return [
+            {"category": "day_cruise", "handling_time_minutes": 8.0, "average_booking_value": 500.0},
+            {"category": "seven_night_cruise", "handling_time_minutes": 22.0, "average_booking_value": 2200.0},
+            {"category": "nine_night_cruise", "handling_time_minutes": 28.0, "average_booking_value": 2800.0},
+        ]
+
+    def test_deterministic_kpi_frame_has_correct_values(self) -> None:
+        kpi = build_deterministic_kpi_frame(
+            self._build_deterministic_result(),
+            self._build_effective_forecast(),
+        )
+
+        self.assertEqual(len(kpi), 5)
+        self.assertAlmostEqual(
+            kpi.set_index("metric").loc["Forecasted bookings", "value"],
+            478.5,
+        )
+        self.assertAlmostEqual(
+            kpi.set_index("metric").loc["Recommended staffing", "value"],
+            11,
+        )
+
+    def test_secondary_kpi_frame_includes_all_metrics(self) -> None:
+        fin_rec = {
             "recommended_staffing_record": {
-                "staffing_agents": 10,
-                "capacity_confidence": 0.90,
-                "expected_overtime_hours": 1.7,
-                "expected_abandoned_total": 1.0,
-                "expected_total_economic_cost": 401.5,
-            },
+                "expected_total_weekly_operating_cost": 9680.0,
+            }
         }
-
-    def test_recommendation_summary_frame_aligns_with_comparison_table(self) -> None:
-        comparison_table = self._build_comparison_table()
-        recommendation = self._build_recommendation()
-
-        summary_frame = build_recommendation_summary_frame(recommendation, comparison_table)
-        comparison_frame = build_plan_comparison_frame(comparison_table)
-
-        self.assertEqual(
-            summary_frame["metric"].tolist(),
-            [
-                "Recommended staffing",
-                "Capacity confidence",
-                "Expected overtime",
-                "Expected abandonment",
-                "Expected total economic cost",
-                "Difference vs previous week",
-                "Difference vs manager plan",
-            ],
-        )
-        self.assertEqual(
-            summary_frame.set_index("metric").loc["Recommended staffing", "value"],
-            10,
-        )
-        self.assertEqual(
-            summary_frame.set_index("metric").loc["Capacity confidence", "value"],
-            90.0,
-        )
-        self.assertEqual(
-            summary_frame.set_index("metric").loc["Difference vs previous week", "value"],
-            2,
-        )
-        self.assertEqual(
-            summary_frame.set_index("metric").loc["Difference vs manager plan", "value"],
-            1,
+        secondary = build_secondary_kpi_frame(
+            self._build_deterministic_result(),
+            previous_week_staffing=9,
+            manager_planned_staffing=10,
+            financial_recommendation=fin_rec,
         )
 
-        recommended_row = comparison_frame.loc[
-            comparison_frame["plan_name"] == "Financial Recommendation"
-        ].iloc[0]
-        self.assertEqual(recommended_row["staffing_agents"], 10)
-        self.assertEqual(recommended_row["capacity_confidence_pct"], 90.0)
-        self.assertEqual(recommended_row["expected_overtime_hours"], 1.7)
-        self.assertEqual(recommended_row["expected_abandoned_total"], 1.0)
-        self.assertEqual(recommended_row["expected_total_economic_cost_usd"], 401.5)
-        self.assertEqual(recommended_row["delta_staffing_vs_recommendation"], 0)
-        self.assertEqual(
-            recommended_row["delta_total_economic_cost_usd_vs_recommendation"],
-            0.0,
+        self.assertEqual(len(secondary), 5)
+        metrics = secondary["metric"].tolist()
+        self.assertIn("Previous-week staffing", metrics)
+        self.assertIn("Manager-planned staffing", metrics)
+        self.assertIn("Total weekly operating cost", metrics)
+
+    def test_workload_breakdown_frame_uses_human_readable_labels(self) -> None:
+        wl = build_workload_breakdown_frame(
+            self._build_effective_forecast(),
+            self._build_deterministic_result(),
+            self._build_category_assumptions(),
         )
 
-    def test_plan_comparison_frame_rejects_missing_recommendation_row(self) -> None:
-        comparison_table = self._build_comparison_table().loc[
-            lambda frame: frame["plan_name"] != "Financial Recommendation"
-        ].reset_index(drop=True)
+        self.assertEqual(len(wl), 3)
+        self.assertIn(CATEGORY_DISPLAY_LABELS["day_cruise"], wl["cruise_product"].tolist())
+        self.assertIn("forecast_bookings", wl.columns)
+        self.assertIn("workload_hours", wl.columns)
 
-        with self.assertRaisesRegex(FieldValidationError, "Financial Recommendation"):
-            build_plan_comparison_frame(comparison_table)
-
-    def test_tradeoff_chart_frames_cover_all_named_plans_and_recommendation(self) -> None:
-        comparison_table = self._build_comparison_table()
-
-        frames = build_tradeoff_chart_frames(comparison_table)
-
-        self.assertEqual(set(frames), {"cost", "overtime", "abandonment"})
-        for frame in frames.values():
-            self.assertEqual(
-                frame["plan_name"].tolist(),
-                [
-                    "Previous Week",
-                    "Manager Plan",
-                    "Lean",
-                    "Balanced",
-                    "Conservative",
-                    "Financial Recommendation",
-                ],
-            )
-            self.assertEqual(len(frame), 6)
-
-    def test_export_frame_builder_collects_the_core_structured_outputs(self) -> None:
-        forecast_result = pd.DataFrame(
-            [
-                {
-                    "category": "simple",
-                    "point_forecast": 12.0,
-                    "forecast_source": "automatic",
-                    "historical_mean": 11.0,
-                    "historical_std": 1.0,
-                    "adjusted_std": 1.1,
-                }
-            ]
-        )
-        staffing_evaluation_table = pd.DataFrame(
-            [
-                {
-                    "staffing_agents": 10,
-                    "capacity_confidence": 0.9,
-                    "expected_overtime_hours": 1.7,
-                    "expected_abandoned_total": 1.0,
-                    "expected_total_economic_cost": 401.5,
-                }
-            ]
-        )
-        named_plan_table = pd.DataFrame([{"plan_name": "Balanced", "staffing_agents": 9}])
-        comparison_table = self._build_comparison_table()
-        recommendation_summary = build_recommendation_summary_frame(
-            self._build_recommendation(),
-            comparison_table,
-        )
-        comparison_display = build_plan_comparison_frame(comparison_table)
-
-        exports = build_results_export_frames(
-            {
-                "forecast_result": forecast_result,
-                "staffing_evaluation_table": staffing_evaluation_table,
-                "named_plans": {"table": named_plan_table},
-                "narrative": {"comparison_table": comparison_table},
-            },
-            recommendation_summary,
-            comparison_display,
-        )
-
-        self.assertEqual(
-            set(exports),
-            {
-                "forecast_result",
-                "staffing_evaluation_table",
-                "named_plan_table",
-                "comparison_table",
-                "plan_comparison_display",
-                "recommendation_summary",
-            },
-        )
-        self.assertEqual(exports["forecast_result"].iloc[0]["category"], "simple")
-        self.assertIsNot(exports["forecast_result"], forecast_result)
-        self.assertEqual(
-            exports["plan_comparison_display"]["plan_name"].tolist(),
-            [
-                "Previous Week",
-                "Manager Plan",
-                "Lean",
-                "Balanced",
-                "Conservative",
-                "Financial Recommendation",
-            ],
-        )
-
-
-class UIDemandRenderingTests(unittest.TestCase):
-    class _DummyContext:
-        def __enter__(self) -> "UIDemandRenderingTests._DummyContext":
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> bool:
-            return False
-
-    class _DummyColumn(_DummyContext):
-        def metric(self, *args: object, **kwargs: object) -> None:
-            return None
-
-        def toggle(self, *args: object, key: str, **kwargs: object) -> bool:
-            return bool(components.st.session_state[key])
-
-        def form_submit_button(self, *args: object, **kwargs: object) -> bool:
-            return False
-
-    def _build_history(self) -> pd.DataFrame:
-        return pd.DataFrame(
-            [
-                {
-                    "week_id": "2026-W01",
-                    "week_start": "2025-12-29",
-                    "simple": 18,
-                    "standard": 26,
-                    "complex_group": 8,
-                    "change_cancellation": 4,
-                    "staffing_agents": 7,
-                },
-                {
-                    "week_id": "2026-W02",
-                    "week_start": "2026-01-05",
-                    "simple": 20,
-                    "standard": 27,
-                    "complex_group": 9,
-                    "change_cancellation": 5,
-                    "staffing_agents": 7,
-                },
-                {
-                    "week_id": "2026-W03",
-                    "week_start": "2026-01-12",
-                    "simple": 19,
-                    "standard": 28,
-                    "complex_group": 9,
-                    "change_cancellation": 5,
-                    "staffing_agents": 8,
-                },
-                {
-                    "week_id": "2026-W04",
-                    "week_start": "2026-01-19",
-                    "simple": 21,
-                    "standard": 29,
-                    "complex_group": 10,
-                    "change_cancellation": 6,
-                    "staffing_agents": 8,
-                },
-            ]
-        )
-
-    def _build_application_result(self) -> dict[str, object]:
-        return build_application_result(
-            history=self._build_history(),
-            category_assumptions=(
-                CategoryAssumptions("simple", 15.0, 400.0, 80.0),
-                CategoryAssumptions("standard", 35.0, 1800.0, 360.0),
-                CategoryAssumptions("complex_group", 75.0, 6000.0, 1200.0),
-                CategoryAssumptions("change_cancellation", 20.0, 75.0, 25.0),
-            ),
-            workforce_assumptions=WorkforceAssumptions(40.0, 0.85, 22.0, 1.5, 0.1, 9),
-            forecast_configuration=ForecastConfiguration((0.4, 0.3, 0.2, 0.1), 1.0, None),
-            simulation_configuration=SimulationConfiguration(200, 510, 1.0, "normal"),
-            confidence_targets=ConfidenceTargets(0.5, 0.85, 0.95),
+    def test_forecast_breakdown_frame_shows_all_layers(self) -> None:
+        fb = build_forecast_breakdown_frame(
+            automatic_forecast={"day_cruise": 235.0, "seven_night_cruise": 153.5, "nine_night_cruise": 90.0},
+            scenario_adjusted_forecast={"day_cruise": 235.0, "seven_night_cruise": 153.5, "nine_night_cruise": 90.0},
+            effective_forecast={"day_cruise": 235.0, "seven_night_cruise": 153.5, "nine_night_cruise": 90.0},
             manual_overrides=None,
+            scenario_name="Expected Demand",
         )
 
-    def test_render_demand_inputs_does_not_call_orchestration_for_preview(self) -> None:
-        session_state = {
-            "forecast_mode": "automatic",
-            "weeks_to_display": 12,
-            "analysis_result": self._build_application_result(),
-            "analysis_error": None,
-            "results_stale": False,
-            "applied_inputs": {
-                "manual_overrides": {
-                    category: {"enabled": False, "value": 0.0}
-                    for category in RESERVATION_CATEGORIES
-                }
+        self.assertEqual(len(fb), 3)
+        self.assertIn("automatic_forecast", fb.columns)
+        self.assertIn("scenario_adjusted", fb.columns)
+        self.assertIn("effective_forecast", fb.columns)
+        self.assertIn("forecast_source", fb.columns)
+
+    def test_staffing_capacity_frame_shows_steps(self) -> None:
+        sc = build_staffing_capacity_frame(
+            self._build_deterministic_result(),
+            {
+                "weekly_booking_processing_hours_per_agent": 12.5,
+                "minimum_schedulable_agents": 8,
+                "maximum_inhouse_agents": 12,
             },
+        )
+
+        self.assertGreater(len(sc), 0)
+        steps = sc["step"].tolist()
+        self.assertIn("Raw FTE", steps)
+        self.assertIn("Recommended in-house agents", steps)
+
+    def test_financial_breakdown_frame_shows_costs(self) -> None:
+        fin_rec = {
+            "recommended_staffing_record": {
+                "regular_labor_cost": 9680.0,
+                "expected_overflow_commission": 0.0,
+                "expected_total_weekly_operating_cost": 9680.0,
+            }
         }
-        for category in RESERVATION_CATEGORIES:
-            session_state[manual_override_enabled_key(category)] = False
-            session_state[manual_override_value_key(category)] = 0.0
+        ff = build_financial_breakdown_frame(
+            fin_rec,
+            self._build_deterministic_result(),
+            self._build_category_assumptions(),
+            {"third_party_commission_rate": 0.125},
+        )
 
-        dummy_context = self._DummyContext()
-        with mock.patch.object(components, "_load_history", return_value=self._build_history()), mock.patch.object(
-            components,
-            "_load_defaults",
-            return_value={
-                "forecast_configuration": ForecastConfiguration((0.4, 0.3, 0.2, 0.1), 1.0, None)
-            },
-        ), mock.patch.object(components, "run_analysis_for_current_draft") as run_mock, mock.patch.object(
-            components,
-            "update_draft_inputs_from_widgets",
-        ) as draft_mock, mock.patch.object(
-            components.st,
-            "session_state",
-            session_state,
-        ), mock.patch.object(
-            components.st,
-            "subheader",
-        ), mock.patch.object(
-            components.st,
-            "write",
-        ), mock.patch.object(
-            components.st,
-            "caption",
-        ), mock.patch.object(
-            components.st,
-            "metric",
-        ), mock.patch.object(
-            components.st,
-            "dataframe",
-        ), mock.patch.object(
-            components.st,
-            "bar_chart",
-        ), mock.patch.object(
-            components.st,
-            "markdown",
-        ), mock.patch.object(
-            components.st,
-            "warning",
-        ), mock.patch.object(
-            components.st,
-            "error",
-        ), mock.patch.object(
-            components.st,
-            "columns",
-            side_effect=lambda spec, **kwargs: [self._DummyColumn() for _ in range(len(spec) if isinstance(spec, tuple) else spec)],
-        ), mock.patch.object(
-            components.st,
-            "container",
-            return_value=dummy_context,
-        ), mock.patch.object(
-            components.st,
-            "expander",
-            return_value=dummy_context,
-        ), mock.patch.object(
-            components.st,
-            "form",
-            return_value=dummy_context,
-        ), mock.patch.object(
-            components.st,
-            "number_input",
-            side_effect=lambda *args, key, **kwargs: session_state[key],
-        ), mock.patch.object(
-            components.st,
-            "json",
-        ):
-            components.render_demand_inputs(session_state)
+        items = ff["item"].tolist()
+        self.assertIn("In-house labor cost", items)
+        self.assertIn("Total weekly operating cost", items)
 
-        draft_mock.assert_not_called()
-        run_mock.assert_not_called()
+    def test_category_assumptions_frame_uses_booking_value(self) -> None:
+        frame = build_category_assumptions_frame(self._build_category_assumptions())
 
+        self.assertIn("average_booking_value", frame.columns)
+        self.assertNotIn("average_revenue", frame.columns)
+        self.assertNotIn("contribution_per_reservation", frame.columns)
+
+    def test_overflow_detail_frame_empty_when_no_overflow(self) -> None:
+        od = build_overflow_detail_frame(self._build_deterministic_result())
+        self.assertEqual(od["overflow_bookings"].sum(), 0.0)
+
+
+class UIDashboardStructureTests(unittest.TestCase):
+    """Verify the new single-page dashboard structure does not contain old controls."""
+
+    def test_components_module_has_no_section_navigation(self) -> None:
+        from src.ui import components as comp
+
+        self.assertTrue(hasattr(comp, "render_main_dashboard"))
+        self.assertTrue(hasattr(comp, "render_hero_card"))
+        self.assertTrue(hasattr(comp, "render_kpi_grid"))
+        self.assertTrue(hasattr(comp, "render_narrative"))
+        self.assertTrue(hasattr(comp, "render_action_row"))
+
+        # Old section renderers removed
+        self.assertFalse(hasattr(comp, "render_active_section"))
+        self.assertFalse(hasattr(comp, "render_overview"))
+        self.assertFalse(hasattr(comp, "render_demand_inputs"))
+        self.assertFalse(hasattr(comp, "render_operations"))
+        self.assertFalse(hasattr(comp, "render_results"))
+        self.assertFalse(hasattr(comp, "render_sidebar"))
+
+    def test_state_module_has_no_section_options(self) -> None:
+        from src.ui import state as st_mod
+
+        self.assertFalse(hasattr(st_mod, "section_options"))
+        self.assertFalse(hasattr(st_mod, "APP_SECTIONS"))
+        self.assertFalse(hasattr(st_mod, "FORECAST_MODE_MIGRATIONS"))
+
+    def test_state_session_has_no_obsolete_keys(self) -> None:
+        from src.ui.state import DEFAULT_SESSION_STATE
+
+        self.assertNotIn("selected_category", DEFAULT_SESSION_STATE)
+        self.assertNotIn("forecast_mode", DEFAULT_SESSION_STATE)
+        self.assertNotIn("weeks_to_display", DEFAULT_SESSION_STATE)
+        self.assertNotIn("show_contract_snapshot", DEFAULT_SESSION_STATE)
+        self.assertNotIn("manual_override_notes", DEFAULT_SESSION_STATE)
+        self.assertNotIn("active_section", DEFAULT_SESSION_STATE)
+
+    def test_app_py_uses_main_dashboard(self) -> None:
+        import app
+
+        self.assertTrue(hasattr(app, "main"))
 
 
 if __name__ == "__main__":
