@@ -10,6 +10,14 @@ import pandas as pd
 from src.constants import RESERVATION_CATEGORIES
 from src.forecasting.uncertainty import assemble_forecast_result
 from src.forecasting.weighted_moving_average import calculate_weighted_moving_average
+from src.models import (
+    CategoryAssumptions,
+    ConfidenceTargets,
+    ForecastConfiguration,
+    SimulationConfiguration,
+    WorkforceAssumptions,
+)
+from src.orchestration import build_application_result
 from src.validation import FieldValidationError
 from src.ui.charts import (
     build_forecast_display_frame,
@@ -20,19 +28,126 @@ from src.ui.charts import (
     build_results_export_frames,
     build_tradeoff_chart_frames,
 )
-from src.ui.components import _resolve_demand_application_result
+from src.ui import components
 from src.ui.state import (
     build_manual_overrides_from_state,
     confidence_targets_are_ordered,
     decimal_to_percent,
+    initialize_session_state,
     manual_override_enabled_key,
     manual_override_value_key,
+    refresh_draft_shell_preferences,
     percent_to_decimal,
     reset_session_state,
+    run_analysis_for_current_draft,
+    update_draft_inputs_from_widgets,
 )
 
 
 class UICoordinateHelpersTests(unittest.TestCase):
+    def _build_history(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "week_id": "2026-W01",
+                    "week_start": "2025-12-29",
+                    "simple": 18,
+                    "standard": 26,
+                    "complex_group": 8,
+                    "change_cancellation": 4,
+                    "staffing_agents": 7,
+                },
+                {
+                    "week_id": "2026-W02",
+                    "week_start": "2026-01-05",
+                    "simple": 20,
+                    "standard": 27,
+                    "complex_group": 9,
+                    "change_cancellation": 5,
+                    "staffing_agents": 7,
+                },
+                {
+                    "week_id": "2026-W03",
+                    "week_start": "2026-01-12",
+                    "simple": 19,
+                    "standard": 28,
+                    "complex_group": 9,
+                    "change_cancellation": 5,
+                    "staffing_agents": 8,
+                },
+                {
+                    "week_id": "2026-W04",
+                    "week_start": "2026-01-19",
+                    "simple": 21,
+                    "standard": 29,
+                    "complex_group": 10,
+                    "change_cancellation": 6,
+                    "staffing_agents": 8,
+                },
+            ]
+        )
+
+    def _build_defaults(self) -> dict[str, object]:
+        return {
+            "category_assumptions": (
+                CategoryAssumptions(
+                    category="simple",
+                    handling_time_minutes=15.0,
+                    average_revenue=400.0,
+                    contribution_per_reservation=80.0,
+                ),
+                CategoryAssumptions(
+                    category="standard",
+                    handling_time_minutes=35.0,
+                    average_revenue=1800.0,
+                    contribution_per_reservation=360.0,
+                ),
+                CategoryAssumptions(
+                    category="complex_group",
+                    handling_time_minutes=75.0,
+                    average_revenue=6000.0,
+                    contribution_per_reservation=1200.0,
+                ),
+                CategoryAssumptions(
+                    category="change_cancellation",
+                    handling_time_minutes=20.0,
+                    average_revenue=75.0,
+                    contribution_per_reservation=25.0,
+                ),
+            ),
+            "workforce_assumptions": WorkforceAssumptions(
+                paid_hours_per_agent=40.0,
+                productive_processing_pct=0.85,
+                regular_hourly_wage=22.0,
+                overtime_multiplier=1.5,
+                abandonment_rate=0.10,
+                planned_staffing_agents=9,
+            ),
+            "forecast_configuration": ForecastConfiguration(
+                weights=(0.4, 0.3, 0.2, 0.1),
+                variability_multiplier=1.0,
+                manual_overrides=None,
+            ),
+            "simulation_configuration": SimulationConfiguration(
+                iterations=200,
+                random_seed=510,
+                variability_multiplier=1.0,
+                distribution_name="normal",
+            ),
+            "confidence_targets": ConfidenceTargets(
+                lean=0.5,
+                balanced=0.85,
+                conservative=0.95,
+            ),
+        }
+
+    def _build_initialized_state(self) -> tuple[dict[str, object], pd.DataFrame, dict[str, object]]:
+        history = self._build_history()
+        defaults = self._build_defaults()
+        state: dict[str, object] = {}
+        initialize_session_state(state, history=history, defaults=defaults)
+        return state, history, defaults
+
     def test_percent_round_trip_uses_ui_display_and_internal_decimal_values(self) -> None:
         self.assertEqual(decimal_to_percent(0.85), 85.0)
         self.assertAlmostEqual(percent_to_decimal(85.0), 0.85)
@@ -64,22 +179,101 @@ class UICoordinateHelpersTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-negative"):
             build_manual_overrides_from_state(state)
 
-    def test_reset_session_state_restores_defaults_and_clears_transient_values(self) -> None:
-        state = {
-            "active_section": "Results",
-            "scenario_label": "Custom scenario",
-            "selected_category": "simple",
-            "temporary_note": "discard me",
-            manual_override_enabled_key("simple"): True,
-        }
+    def test_initialize_session_state_creates_baseline_draft_applied_and_result(self) -> None:
+        state, _, _ = self._build_initialized_state()
 
-        reset_session_state(state)
+        self.assertTrue(state["shell_initialized"])
+        self.assertFalse(state["results_stale"])
+        self.assertEqual(state["draft_inputs"], state["applied_inputs"])
+        self.assertEqual(state["baseline_inputs"], state["applied_inputs"])
+        self.assertIsNone(state["analysis_error"])
+        self.assertTrue(state["analysis_result"]["ok"])
 
-        self.assertNotIn("temporary_note", state)
+    def test_draft_change_marks_results_stale_without_replacing_applied_inputs(self) -> None:
+        state, _, _ = self._build_initialized_state()
+        original_applied_inputs = state["applied_inputs"]
+        original_result = state["analysis_result"]
+
+        state[manual_override_enabled_key("simple")] = True
+        state[manual_override_value_key("simple")] = 99.0
+        update_draft_inputs_from_widgets(state)
+
+        self.assertTrue(state["results_stale"])
+        self.assertEqual(state["applied_inputs"], original_applied_inputs)
+        self.assertIs(state["analysis_result"], original_result)
+        self.assertTrue(state["draft_inputs"]["manual_overrides"]["simple"]["enabled"])
+        self.assertEqual(state["draft_inputs"]["manual_overrides"]["simple"]["value"], 99.0)
+
+    def test_run_analysis_applies_draft_and_updates_stored_result(self) -> None:
+        state, history, defaults = self._build_initialized_state()
+
+        state[manual_override_enabled_key("simple")] = True
+        state[manual_override_value_key("simple")] = 99.0
+        update_draft_inputs_from_widgets(state)
+        run_analysis_for_current_draft(state, history=history, defaults=defaults)
+
+        self.assertFalse(state["results_stale"])
+        self.assertIsNone(state["analysis_error"])
+        self.assertEqual(state["draft_inputs"], state["applied_inputs"])
+        self.assertEqual(
+            state["applied_inputs"]["manual_overrides"]["simple"],
+            {"enabled": True, "value": 99.0},
+        )
+        simple_forecast = state["analysis_result"]["forecast_result"].loc[
+            lambda frame: frame["category"] == "simple",
+            "point_forecast",
+        ].iloc[0]
+        self.assertEqual(float(simple_forecast), 99.0)
+
+    def test_navigation_change_does_not_touch_draft_applied_or_result(self) -> None:
+        state, _, _ = self._build_initialized_state()
+        draft_before = state["draft_inputs"]
+        applied_before = state["applied_inputs"]
+        result_before = state["analysis_result"]
+
+        state["active_section"] = "Operations"
+
+        self.assertEqual(state["draft_inputs"], draft_before)
+        self.assertEqual(state["applied_inputs"], applied_before)
+        self.assertIs(state["analysis_result"], result_before)
+
+    def test_shell_preference_change_marks_results_stale_without_touching_navigation(self) -> None:
+        state, _, _ = self._build_initialized_state()
+
+        state["active_section"] = "Results"
+        state["scenario_label"] = "High Demand"
+        refresh_draft_shell_preferences(state)
+
+        self.assertEqual(state["active_section"], "Results")
+        self.assertTrue(state["results_stale"])
+        self.assertEqual(state["draft_inputs"]["shell"]["scenario_label"], "High Demand")
+        self.assertEqual(state["applied_inputs"]["shell"]["scenario_label"], "Expected Demand")
+
+    def test_reset_restores_baseline_inputs_and_a_clean_result(self) -> None:
+        state, history, defaults = self._build_initialized_state()
+
+        state["active_section"] = "Results"
+        state["scenario_label"] = "High Demand"
+        state["selected_category"] = "complex_group"
+        state["weeks_to_display"] = 4
+        state["show_contract_snapshot"] = True
+        state["manual_override_notes"] = "test note"
+        state[manual_override_enabled_key("simple")] = True
+        state[manual_override_value_key("simple")] = 99.0
+        update_draft_inputs_from_widgets(state)
+        reset_session_state(state, history=history, defaults=defaults)
+
         self.assertEqual(state["active_section"], "Overview")
         self.assertEqual(state["selected_category"], RESERVATION_CATEGORIES[0])
         self.assertEqual(state["scenario_label"], "Expected Demand")
-        self.assertTrue(state["shell_initialized"])
+        self.assertEqual(state["weeks_to_display"], 12)
+        self.assertFalse(state["show_contract_snapshot"])
+        self.assertEqual(state["manual_override_notes"], "")
+        self.assertFalse(state["results_stale"])
+        self.assertEqual(state["draft_inputs"], state["baseline_inputs"])
+        self.assertEqual(state["applied_inputs"], state["baseline_inputs"])
+        self.assertIsNone(state["analysis_error"])
+        self.assertTrue(state["analysis_result"]["ok"])
 
     def test_methodology_points_summarize_the_recommendation_flow(self) -> None:
         points = build_methodology_points()
@@ -106,56 +300,6 @@ class UICoordinateHelpersTests(unittest.TestCase):
 
         with self.assertRaisesRegex(FieldValidationError, "missing required columns"):
             build_history_display_frame(history)
-
-    def test_resolve_demand_application_result_reuses_preview_when_no_override_is_enabled(self) -> None:
-        state: dict[str, object] = {}
-        preview_result = {
-            "ok": True,
-            "automatic_forecast": {category: 10.0 for category in RESERVATION_CATEGORIES},
-        }
-
-        with mock.patch(
-            "src.ui.components._build_application_result_from_state"
-        ) as build_mock:
-            result, manual_overrides = _resolve_demand_application_result(
-                state,
-                preview_result,
-                history=pd.DataFrame(),
-                defaults={},
-            )
-
-        self.assertEqual(result, preview_result)
-        self.assertEqual(manual_overrides, {})
-        build_mock.assert_not_called()
-
-    def test_resolve_demand_application_result_recomputes_when_manual_override_is_enabled(self) -> None:
-        state: dict[str, object] = {
-            manual_override_enabled_key("simple"): True,
-            manual_override_value_key("simple"): 21.0,
-        }
-        preview_result = {
-            "ok": True,
-            "automatic_forecast": {category: 10.0 for category in RESERVATION_CATEGORIES},
-        }
-        recomputed_result = {
-            "ok": True,
-            "forecast_result": pd.DataFrame([{"category": "simple"}]),
-        }
-
-        with mock.patch(
-            "src.ui.components._build_application_result_from_state",
-            return_value=recomputed_result,
-        ) as build_mock:
-            result, manual_overrides = _resolve_demand_application_result(
-                state,
-                preview_result,
-                history=pd.DataFrame(),
-                defaults={"unused": True},
-            )
-
-        self.assertEqual(manual_overrides, {"simple": 21.0})
-        self.assertEqual(result, recomputed_result)
-        build_mock.assert_called_once()
 
 
 class UIForecastDisplayTests(unittest.TestCase):
@@ -491,6 +635,171 @@ class UIRecommendationDisplayTests(unittest.TestCase):
                 "Financial Recommendation",
             ],
         )
+
+
+class UIDemandRenderingTests(unittest.TestCase):
+    class _DummyContext:
+        def __enter__(self) -> "UIDemandRenderingTests._DummyContext":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    class _DummyColumn(_DummyContext):
+        def metric(self, *args: object, **kwargs: object) -> None:
+            return None
+
+        def toggle(self, *args: object, key: str, **kwargs: object) -> bool:
+            return bool(components.st.session_state[key])
+
+        def form_submit_button(self, *args: object, **kwargs: object) -> bool:
+            return False
+
+    def _build_history(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "week_id": "2026-W01",
+                    "week_start": "2025-12-29",
+                    "simple": 18,
+                    "standard": 26,
+                    "complex_group": 8,
+                    "change_cancellation": 4,
+                    "staffing_agents": 7,
+                },
+                {
+                    "week_id": "2026-W02",
+                    "week_start": "2026-01-05",
+                    "simple": 20,
+                    "standard": 27,
+                    "complex_group": 9,
+                    "change_cancellation": 5,
+                    "staffing_agents": 7,
+                },
+                {
+                    "week_id": "2026-W03",
+                    "week_start": "2026-01-12",
+                    "simple": 19,
+                    "standard": 28,
+                    "complex_group": 9,
+                    "change_cancellation": 5,
+                    "staffing_agents": 8,
+                },
+                {
+                    "week_id": "2026-W04",
+                    "week_start": "2026-01-19",
+                    "simple": 21,
+                    "standard": 29,
+                    "complex_group": 10,
+                    "change_cancellation": 6,
+                    "staffing_agents": 8,
+                },
+            ]
+        )
+
+    def _build_application_result(self) -> dict[str, object]:
+        return build_application_result(
+            history=self._build_history(),
+            category_assumptions=(
+                CategoryAssumptions("simple", 15.0, 400.0, 80.0),
+                CategoryAssumptions("standard", 35.0, 1800.0, 360.0),
+                CategoryAssumptions("complex_group", 75.0, 6000.0, 1200.0),
+                CategoryAssumptions("change_cancellation", 20.0, 75.0, 25.0),
+            ),
+            workforce_assumptions=WorkforceAssumptions(40.0, 0.85, 22.0, 1.5, 0.1, 9),
+            forecast_configuration=ForecastConfiguration((0.4, 0.3, 0.2, 0.1), 1.0, None),
+            simulation_configuration=SimulationConfiguration(200, 510, 1.0, "normal"),
+            confidence_targets=ConfidenceTargets(0.5, 0.85, 0.95),
+            manual_overrides=None,
+        )
+
+    def test_render_demand_inputs_does_not_call_orchestration_for_preview(self) -> None:
+        session_state = {
+            "forecast_mode": "automatic",
+            "weeks_to_display": 12,
+            "analysis_result": self._build_application_result(),
+            "analysis_error": None,
+            "results_stale": False,
+            "applied_inputs": {
+                "manual_overrides": {
+                    category: {"enabled": False, "value": 0.0}
+                    for category in RESERVATION_CATEGORIES
+                }
+            },
+        }
+        for category in RESERVATION_CATEGORIES:
+            session_state[manual_override_enabled_key(category)] = False
+            session_state[manual_override_value_key(category)] = 0.0
+
+        dummy_context = self._DummyContext()
+        with mock.patch.object(components, "_load_history", return_value=self._build_history()), mock.patch.object(
+            components,
+            "_load_defaults",
+            return_value={
+                "forecast_configuration": ForecastConfiguration((0.4, 0.3, 0.2, 0.1), 1.0, None)
+            },
+        ), mock.patch.object(components, "run_analysis_for_current_draft") as run_mock, mock.patch.object(
+            components,
+            "update_draft_inputs_from_widgets",
+        ) as draft_mock, mock.patch.object(
+            components.st,
+            "session_state",
+            session_state,
+        ), mock.patch.object(
+            components.st,
+            "subheader",
+        ), mock.patch.object(
+            components.st,
+            "write",
+        ), mock.patch.object(
+            components.st,
+            "caption",
+        ), mock.patch.object(
+            components.st,
+            "metric",
+        ), mock.patch.object(
+            components.st,
+            "dataframe",
+        ), mock.patch.object(
+            components.st,
+            "bar_chart",
+        ), mock.patch.object(
+            components.st,
+            "markdown",
+        ), mock.patch.object(
+            components.st,
+            "warning",
+        ), mock.patch.object(
+            components.st,
+            "error",
+        ), mock.patch.object(
+            components.st,
+            "columns",
+            side_effect=lambda spec, **kwargs: [self._DummyColumn() for _ in range(len(spec) if isinstance(spec, tuple) else spec)],
+        ), mock.patch.object(
+            components.st,
+            "container",
+            return_value=dummy_context,
+        ), mock.patch.object(
+            components.st,
+            "expander",
+            return_value=dummy_context,
+        ), mock.patch.object(
+            components.st,
+            "form",
+            return_value=dummy_context,
+        ), mock.patch.object(
+            components.st,
+            "number_input",
+            side_effect=lambda *args, key, **kwargs: session_state[key],
+        ), mock.patch.object(
+            components.st,
+            "json",
+        ):
+            components.render_demand_inputs(session_state)
+
+        draft_mock.assert_not_called()
+        run_mock.assert_not_called()
 
 
 
