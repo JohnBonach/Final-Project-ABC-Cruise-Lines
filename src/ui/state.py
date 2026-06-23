@@ -445,14 +445,27 @@ def update_draft_inputs_from_widgets(session_state: MutableMapping[str, Any]) ->
 def refresh_draft_shell_preferences(session_state: MutableMapping[str, Any]) -> None:
     """Update shell-backed draft preferences from the current top-level session state."""
 
-    _normalize_shell_preferences(session_state)
     draft_inputs = session_state.get("draft_inputs")
     if not isinstance(draft_inputs, Mapping):
         return
 
     updated_draft_inputs = deepcopy(dict(draft_inputs))
-    updated_draft_inputs["shell"]["forecast_mode"] = str(session_state["forecast_mode"])
-    updated_draft_inputs["shell"]["scenario_label"] = str(session_state["scenario_label"])
+    forecast_mode = str(
+        session_state.get("forecast_mode", DEFAULT_SESSION_STATE["forecast_mode"])
+    )
+    if forecast_mode in FORECAST_MODE_MIGRATIONS:
+        forecast_mode = FORECAST_MODE_MIGRATIONS[forecast_mode]
+    if forecast_mode not in FORECAST_MODE_MIGRATIONS.values():
+        forecast_mode = DEFAULT_SESSION_STATE["forecast_mode"]
+
+    scenario_label = str(
+        session_state.get("scenario_label", DEFAULT_SESSION_STATE["scenario_label"])
+    )
+    if scenario_label not in EXPECTED_SCENARIO_NAMES:
+        scenario_label = DEFAULT_SESSION_STATE["scenario_label"]
+
+    updated_draft_inputs["shell"]["forecast_mode"] = forecast_mode
+    updated_draft_inputs["shell"]["scenario_label"] = scenario_label
     session_state["draft_inputs"] = updated_draft_inputs
     session_state["results_stale"] = draft_inputs_differ_from_applied(session_state)
 
