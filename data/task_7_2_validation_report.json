@@ -1,0 +1,430 @@
+{
+  "case_name": "uniform_four_week_hand_check",
+  "description": "A four-week constant-history example that makes the weighted forecast, workload, FTE, shortage, abandonment, overtime, and lost-contribution math easy to verify by hand.",
+  "validation_tolerance": 1e-09,
+  "passed": true,
+  "actual": {
+    "forecast": {
+      "point_forecast": {
+        "simple": 12.0,
+        "standard": 8.0,
+        "complex_group": 4.0,
+        "change_cancellation": 6.0
+      },
+      "historical_mean": {
+        "simple": 12.0,
+        "standard": 8.0,
+        "complex_group": 4.0,
+        "change_cancellation": 6.0
+      },
+      "historical_std": {
+        "simple": 0.0,
+        "standard": 0.0,
+        "complex_group": 0.0,
+        "change_cancellation": 0.0
+      },
+      "adjusted_std": {
+        "simple": 0.0,
+        "standard": 0.0,
+        "complex_group": 0.0,
+        "change_cancellation": 0.0
+      },
+      "forecast_source": {
+        "simple": "automatic",
+        "standard": "automatic",
+        "complex_group": "automatic",
+        "change_cancellation": "automatic"
+      }
+    },
+    "deterministic_staffing": {
+      "workload_hours_by_category": {
+        "simple": 10.0,
+        "standard": 10.0,
+        "complex_group": 10.0,
+        "change_cancellation": 10.0
+      },
+      "total_workload_hours": 40.0,
+      "productive_hours_per_agent": 30.0,
+      "required_fte": 1.3333333333333333,
+      "required_agents": 2
+    },
+    "staffing_evaluation": {
+      "staffing_agents": 1,
+      "capacity_confidence": 0.0,
+      "probability_overtime_required": 1.0,
+      "expected_overtime_hours": 5.0,
+      "expected_abandoned_total": 3.75,
+      "expected_abandoned_simple": 1.5,
+      "expected_abandoned_standard": 1.0,
+      "expected_abandoned_complex_group": 0.5,
+      "expected_abandoned_change_cancellation": 0.75,
+      "regular_labor_cost": 800.0,
+      "expected_overtime_cost": 150.0,
+      "expected_lost_revenue": 750.0,
+      "expected_lost_contribution": 375.0,
+      "expected_total_economic_cost": 1325.0,
+      "expected_retained_revenue": 5250.0,
+      "expected_retained_contribution": 2625.0,
+      "expected_net_contribution": 1300.0,
+      "expected_unused_regular_hours": 0.0
+    }
+  },
+  "expected": {
+    "forecast": {
+      "point_forecast": {
+        "simple": 12.0,
+        "standard": 8.0,
+        "complex_group": 4.0,
+        "change_cancellation": 6.0
+      },
+      "historical_mean": {
+        "simple": 12.0,
+        "standard": 8.0,
+        "complex_group": 4.0,
+        "change_cancellation": 6.0
+      },
+      "historical_std": {
+        "simple": 0.0,
+        "standard": 0.0,
+        "complex_group": 0.0,
+        "change_cancellation": 0.0
+      },
+      "adjusted_std": {
+        "simple": 0.0,
+        "standard": 0.0,
+        "complex_group": 0.0,
+        "change_cancellation": 0.0
+      },
+      "forecast_source": {
+        "simple": "automatic",
+        "standard": "automatic",
+        "complex_group": "automatic",
+        "change_cancellation": "automatic"
+      }
+    },
+    "deterministic_staffing": {
+      "workload_hours_by_category": {
+        "simple": 10.0,
+        "standard": 10.0,
+        "complex_group": 10.0,
+        "change_cancellation": 10.0
+      },
+      "total_workload_hours": 40.0,
+      "productive_hours_per_agent": 30.0,
+      "required_fte": 1.3333333333333333,
+      "required_agents": 2
+    },
+    "staffing_evaluation": {
+      "staffing_agents": 1,
+      "capacity_confidence": 0.0,
+      "probability_overtime_required": 1.0,
+      "expected_overtime_hours": 5.0,
+      "expected_abandoned_total": 3.75,
+      "expected_abandoned_simple": 1.5,
+      "expected_abandoned_standard": 1.0,
+      "expected_abandoned_complex_group": 0.5,
+      "expected_abandoned_change_cancellation": 0.75,
+      "regular_labor_cost": 800.0,
+      "expected_overtime_cost": 150.0,
+      "expected_lost_revenue": 750.0,
+      "expected_lost_contribution": 375.0,
+      "expected_total_economic_cost": 1325.0,
+      "expected_retained_revenue": 5250.0,
+      "expected_retained_contribution": 2625.0,
+      "expected_net_contribution": 1300.0,
+      "expected_unused_regular_hours": 0.0
+    }
+  },
+  "comparison": {
+    "forecast": {
+      "point_forecast": {
+        "simple": {
+          "actual": 12.0,
+          "expected": 12.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "standard": {
+          "actual": 8.0,
+          "expected": 8.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "complex_group": {
+          "actual": 4.0,
+          "expected": 4.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "change_cancellation": {
+          "actual": 6.0,
+          "expected": 6.0,
+          "delta": 0.0,
+          "matches": true
+        }
+      },
+      "historical_mean": {
+        "simple": {
+          "actual": 12.0,
+          "expected": 12.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "standard": {
+          "actual": 8.0,
+          "expected": 8.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "complex_group": {
+          "actual": 4.0,
+          "expected": 4.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "change_cancellation": {
+          "actual": 6.0,
+          "expected": 6.0,
+          "delta": 0.0,
+          "matches": true
+        }
+      },
+      "historical_std": {
+        "simple": {
+          "actual": 0.0,
+          "expected": 0.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "standard": {
+          "actual": 0.0,
+          "expected": 0.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "complex_group": {
+          "actual": 0.0,
+          "expected": 0.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "change_cancellation": {
+          "actual": 0.0,
+          "expected": 0.0,
+          "delta": 0.0,
+          "matches": true
+        }
+      },
+      "adjusted_std": {
+        "simple": {
+          "actual": 0.0,
+          "expected": 0.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "standard": {
+          "actual": 0.0,
+          "expected": 0.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "complex_group": {
+          "actual": 0.0,
+          "expected": 0.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "change_cancellation": {
+          "actual": 0.0,
+          "expected": 0.0,
+          "delta": 0.0,
+          "matches": true
+        }
+      },
+      "forecast_source": {
+        "simple": {
+          "actual": "automatic",
+          "expected": "automatic",
+          "matches": true
+        },
+        "standard": {
+          "actual": "automatic",
+          "expected": "automatic",
+          "matches": true
+        },
+        "complex_group": {
+          "actual": "automatic",
+          "expected": "automatic",
+          "matches": true
+        },
+        "change_cancellation": {
+          "actual": "automatic",
+          "expected": "automatic",
+          "matches": true
+        }
+      }
+    },
+    "deterministic_staffing": {
+      "workload_hours_by_category": {
+        "simple": {
+          "actual": 10.0,
+          "expected": 10.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "standard": {
+          "actual": 10.0,
+          "expected": 10.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "complex_group": {
+          "actual": 10.0,
+          "expected": 10.0,
+          "delta": 0.0,
+          "matches": true
+        },
+        "change_cancellation": {
+          "actual": 10.0,
+          "expected": 10.0,
+          "delta": 0.0,
+          "matches": true
+        }
+      },
+      "total_workload_hours": {
+        "actual": 40.0,
+        "expected": 40.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "productive_hours_per_agent": {
+        "actual": 30.0,
+        "expected": 30.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "required_fte": {
+        "actual": 1.3333333333333333,
+        "expected": 1.3333333333333333,
+        "delta": 0.0,
+        "matches": true
+      },
+      "required_agents": {
+        "actual": 2.0,
+        "expected": 2.0,
+        "delta": 0.0,
+        "matches": true
+      }
+    },
+    "staffing_evaluation": {
+      "staffing_agents": {
+        "actual": 1.0,
+        "expected": 1.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "capacity_confidence": {
+        "actual": 0.0,
+        "expected": 0.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "probability_overtime_required": {
+        "actual": 1.0,
+        "expected": 1.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_overtime_hours": {
+        "actual": 5.0,
+        "expected": 5.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_abandoned_total": {
+        "actual": 3.75,
+        "expected": 3.75,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_abandoned_simple": {
+        "actual": 1.5,
+        "expected": 1.5,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_abandoned_standard": {
+        "actual": 1.0,
+        "expected": 1.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_abandoned_complex_group": {
+        "actual": 0.5,
+        "expected": 0.5,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_abandoned_change_cancellation": {
+        "actual": 0.75,
+        "expected": 0.75,
+        "delta": 0.0,
+        "matches": true
+      },
+      "regular_labor_cost": {
+        "actual": 800.0,
+        "expected": 800.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_overtime_cost": {
+        "actual": 150.0,
+        "expected": 150.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_lost_revenue": {
+        "actual": 750.0,
+        "expected": 750.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_lost_contribution": {
+        "actual": 375.0,
+        "expected": 375.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_total_economic_cost": {
+        "actual": 1325.0,
+        "expected": 1325.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_retained_revenue": {
+        "actual": 5250.0,
+        "expected": 5250.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_retained_contribution": {
+        "actual": 2625.0,
+        "expected": 2625.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_net_contribution": {
+        "actual": 1300.0,
+        "expected": 1300.0,
+        "delta": 0.0,
+        "matches": true
+      },
+      "expected_unused_regular_hours": {
+        "actual": 0.0,
+        "expected": 0.0,
+        "delta": 0.0,
+        "matches": true
+      }
+    }
+  }
+}

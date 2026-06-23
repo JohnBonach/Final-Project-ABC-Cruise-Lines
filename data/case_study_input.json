@@ -1,0 +1,147 @@
+{
+  "artifact_role": "manual_deterministic_validation_case",
+  "case_name": "uniform_four_week_hand_check",
+  "description": "A four-week constant-history example that makes the weighted forecast, workload, FTE, shortage, abandonment, overtime, and lost-contribution math easy to verify by hand.",
+  "validation_tolerance": 1e-09,
+  "forecast_weights": [0.4, 0.3, 0.2, 0.1],
+  "forecast_variability_multiplier": 1.0,
+  "validation_staffing_agents": 1,
+  "history": [
+    {
+      "week_id": "2026-W01",
+      "week_start": "2025-12-29",
+      "simple": 12,
+      "standard": 8,
+      "complex_group": 4,
+      "change_cancellation": 6,
+      "staffing_agents": 2
+    },
+    {
+      "week_id": "2026-W02",
+      "week_start": "2026-01-05",
+      "simple": 12,
+      "standard": 8,
+      "complex_group": 4,
+      "change_cancellation": 6,
+      "staffing_agents": 2
+    },
+    {
+      "week_id": "2026-W03",
+      "week_start": "2026-01-12",
+      "simple": 12,
+      "standard": 8,
+      "complex_group": 4,
+      "change_cancellation": 6,
+      "staffing_agents": 2
+    },
+    {
+      "week_id": "2026-W04",
+      "week_start": "2026-01-19",
+      "simple": 12,
+      "standard": 8,
+      "complex_group": 4,
+      "change_cancellation": 6,
+      "staffing_agents": 2
+    }
+  ],
+  "category_assumptions": [
+    {
+      "category": "simple",
+      "handling_time_minutes": 50.0,
+      "average_revenue": 200.0,
+      "contribution_per_reservation": 100.0
+    },
+    {
+      "category": "standard",
+      "handling_time_minutes": 75.0,
+      "average_revenue": 200.0,
+      "contribution_per_reservation": 100.0
+    },
+    {
+      "category": "complex_group",
+      "handling_time_minutes": 150.0,
+      "average_revenue": 200.0,
+      "contribution_per_reservation": 100.0
+    },
+    {
+      "category": "change_cancellation",
+      "handling_time_minutes": 100.0,
+      "average_revenue": 200.0,
+      "contribution_per_reservation": 100.0
+    }
+  ],
+  "workforce_assumptions": {
+    "paid_hours_per_agent": 40.0,
+    "productive_processing_pct": 0.75,
+    "regular_hourly_wage": 20.0,
+    "overtime_multiplier": 1.5,
+    "abandonment_rate": 0.5,
+    "planned_staffing_agents": 1
+  },
+  "expected": {
+    "forecast": {
+      "point_forecast": {
+        "simple": 12.0,
+        "standard": 8.0,
+        "complex_group": 4.0,
+        "change_cancellation": 6.0
+      },
+      "historical_mean": {
+        "simple": 12.0,
+        "standard": 8.0,
+        "complex_group": 4.0,
+        "change_cancellation": 6.0
+      },
+      "historical_std": {
+        "simple": 0.0,
+        "standard": 0.0,
+        "complex_group": 0.0,
+        "change_cancellation": 0.0
+      },
+      "adjusted_std": {
+        "simple": 0.0,
+        "standard": 0.0,
+        "complex_group": 0.0,
+        "change_cancellation": 0.0
+      },
+      "forecast_source": {
+        "simple": "automatic",
+        "standard": "automatic",
+        "complex_group": "automatic",
+        "change_cancellation": "automatic"
+      }
+    },
+    "deterministic_staffing": {
+      "workload_hours_by_category": {
+        "simple": 10.0,
+        "standard": 10.0,
+        "complex_group": 10.0,
+        "change_cancellation": 10.0
+      },
+      "total_workload_hours": 40.0,
+      "productive_hours_per_agent": 30.0,
+      "required_fte": 1.3333333333333333,
+      "required_agents": 2
+    },
+    "staffing_evaluation": {
+      "staffing_agents": 1,
+      "capacity_confidence": 0.0,
+      "probability_overtime_required": 1.0,
+      "expected_overtime_hours": 5.0,
+      "expected_abandoned_total": 3.75,
+      "expected_abandoned_simple": 1.5,
+      "expected_abandoned_standard": 1.0,
+      "expected_abandoned_complex_group": 0.5,
+      "expected_abandoned_change_cancellation": 0.75,
+      "regular_labor_cost": 800.0,
+      "expected_overtime_cost": 150.0,
+      "expected_lost_revenue": 750.0,
+      "expected_lost_contribution": 375.0,
+      "expected_total_economic_cost": 1325.0,
+      "expected_retained_revenue": 5250.0,
+      "expected_retained_contribution": 2625.0,
+      "expected_net_contribution": 1300.0,
+      "expected_unused_regular_hours": 0.0
+    }
+  }
+}

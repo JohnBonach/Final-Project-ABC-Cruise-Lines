@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "scenarios": [
+    {
+      "scenario_name": "Low Demand",
+      "demand_multiplier": 0.85,
+      "variability_multiplier": 0.75,
+      "description": "Demand softens below the baseline forecast and week-to-week volatility is reduced."
+    },
+    {
+      "scenario_name": "Expected Demand",
+      "demand_multiplier": 1.0,
+      "variability_multiplier": 1.0,
+      "description": "Baseline planning scenario aligned with the default forecast and historical variability."
+    },
+    {
+      "scenario_name": "High Demand",
+      "demand_multiplier": 1.15,
+      "variability_multiplier": 1.25,
+      "description": "Demand increases above baseline and uncertainty is elevated."
+    }
+  ]
+}

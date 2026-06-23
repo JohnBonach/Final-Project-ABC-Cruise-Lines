@@ -1,0 +1,54 @@
+{
+  "artifact_role": "case_study_evidence_pack",
+  "sources": [
+    "data/case_study_input.json",
+    "data/task_7_2_validation_report.json",
+    "data/probabilistic_case_study_input.json",
+    "data/probabilistic_case_study_report.json",
+    "data/task_7_5_usability_review.md",
+    "README.md",
+    "ABC_Cruise_DSS_Development_WBS.md"
+  ],
+  "manual_validation": {
+    "case_name": "uniform_four_week_hand_check",
+    "passed": true,
+    "required_agents": 2,
+    "required_fte": 1.3333333333333333,
+    "total_workload_hours": 40.0,
+    "expected_total_economic_cost": 1325.0
+  },
+  "probabilistic_case_study": {
+    "case_name": "four_week_handling_time_sensitivity_case",
+    "passed": true,
+    "baseline_recommendation_agents": 9,
+    "baseline_capacity_confidence": 0.3814,
+    "baseline_expected_overtime_hours": 9.253155,
+    "baseline_expected_abandoned_total": 2.4915411284566726,
+    "baseline_expected_total_economic_cost": 8736.44373109719,
+    "sensitivity_recommendation_agents": 8,
+    "sensitivity_capacity_confidence": 0.9404,
+    "sensitivity_expected_overtime_hours": 0.30987599999999993,
+    "sensitivity_expected_abandoned_total": 0.10406040593956131,
+    "sensitivity_expected_total_economic_cost": 7071.583710601327,
+    "recommendation_shift_agents": -1
+  },
+  "assumptions": {
+    "planning_horizon": "1 week",
+    "forecast_weights": [0.4, 0.3, 0.2, 0.1],
+    "category_keys": [
+      "simple",
+      "standard",
+      "complex_group",
+      "change_cancellation"
+    ],
+    "simulation_iterations": 5000,
+    "random_seed": 510
+  },
+  "limitations": [
+    "Synthetic data only",
+    "Weekly tactical scope only",
+    "No hourly scheduling or queueing model",
+    "Simplified global abandonment rate",
+    "No screenshots saved in this environment"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "category_assumptions": [
+    {
+      "category": "simple",
+      "handling_time_minutes": 15.0,
+      "average_revenue": 400.0,
+      "contribution_per_reservation": 80.0
+    },
+    {
+      "category": "standard",
+      "handling_time_minutes": 35.0,
+      "average_revenue": 1800.0,
+      "contribution_per_reservation": 360.0
+    },
+    {
+      "category": "complex_group",
+      "handling_time_minutes": 75.0,
+      "average_revenue": 6000.0,
+      "contribution_per_reservation": 1200.0
+    },
+    {
+      "category": "change_cancellation",
+      "handling_time_minutes": 20.0,
+      "average_revenue": 75.0,
+      "contribution_per_reservation": 25.0
+    }
+  ],
+  "workforce_assumptions": {
+    "paid_hours_per_agent": 40.0,
+    "productive_processing_pct": 0.85,
+    "regular_hourly_wage": 22.0,
+    "overtime_multiplier": 1.5,
+    "abandonment_rate": 0.1,
+    "planned_staffing_agents": 9
+  },
+  "forecast_configuration": {
+    "weights": [
+      0.4,
+      0.3,
+      0.2,
+      0.1
+    ],
+    "variability_multiplier": 1.0,
+    "manual_overrides": null
+  },
+  "simulation_configuration": {
+    "iterations": 5000,
+    "random_seed": 510,
+    "variability_multiplier": 1.0,
+    "distribution_name": "normal"
+  },
+  "confidence_targets": {
+    "lean": 0.5,
+    "balanced": 0.85,
+    "conservative": 0.95
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "artifact_role": "probabilistic_case_study_input",
+  "case_name": "four_week_handling_time_sensitivity_case",
+  "description": "A reproducible probabilistic case study using the last four synthetic history weeks, a fixed Monte Carlo seed, and a handling-time improvement scenario that changes the staffing recommendation.",
+  "previous_week_staffing": 9,
+  "manager_planned_staffing": 8,
+  "baseline": {
+    "history": [
+      {
+        "week_id": "2026-W21",
+        "week_start": "2026-05-18",
+        "simple": 297,
+        "standard": 233,
+        "complex_group": 34,
+        "change_cancellation": 132,
+        "staffing_agents": 9
+      },
+      {
+        "week_id": "2026-W22",
+        "week_start": "2026-05-25",
+        "simple": 380,
+        "standard": 244,
+        "complex_group": 36,
+        "change_cancellation": 128,
+        "staffing_agents": 10
+      },
+      {
+        "week_id": "2026-W23",
+        "week_start": "2026-06-01",
+        "simple": 358,
+        "standard": 196,
+        "complex_group": 44,
+        "change_cancellation": 150,
+        "staffing_agents": 9
+      },
+      {
+        "week_id": "2026-W24",
+        "week_start": "2026-06-08",
+        "simple": 342,
+        "standard": 205,
+        "complex_group": 37,
+        "change_cancellation": 176,
+        "staffing_agents": 9
+      }
+    ],
+    "category_assumptions": [
+      {
+        "category": "simple",
+        "handling_time_minutes": 15.0,
+        "average_revenue": 400.0,
+        "contribution_per_reservation": 80.0
+      },
+      {
+        "category": "standard",
+        "handling_time_minutes": 35.0,
+        "average_revenue": 1800.0,
+        "contribution_per_reservation": 360.0
+      },
+      {
+        "category": "complex_group",
+        "handling_time_minutes": 75.0,
+        "average_revenue": 6000.0,
+        "contribution_per_reservation": 1200.0
+      },
+      {
+        "category": "change_cancellation",
+        "handling_time_minutes": 20.0,
+        "average_revenue": 75.0,
+        "contribution_per_reservation": 25.0
+      }
+    ],
+    "workforce_assumptions": {
+      "paid_hours_per_agent": 40.0,
+      "productive_processing_pct": 0.85,
+      "regular_hourly_wage": 22.0,
+      "overtime_multiplier": 1.5,
+      "abandonment_rate": 0.1,
+      "planned_staffing_agents": 9
+    },
+    "forecast_configuration": {
+      "weights": [
+        0.4,
+        0.3,
+        0.2,
+        0.1
+      ],
+      "variability_multiplier": 1.0,
+      "manual_overrides": null
+    },
+    "simulation_configuration": {
+      "iterations": 5000,
+      "random_seed": 510,
+      "variability_multiplier": 1.0,
+      "distribution_name": "normal"
+    },
+    "confidence_targets": {
+      "lean": 0.5,
+      "balanced": 0.85,
+      "conservative": 0.95
+    }
+  },
+  "sensitivity": {
+    "scenario_name": "process_improvement",
+    "description": "Reduce every category handling time by 20 percent to represent a faster booking workflow.",
+    "handling_time_multiplier": 0.8
+  }
+}
