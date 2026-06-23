@@ -1,8 +1,9 @@
-"""Orchestration helpers that compose existing DSS calculation primitives."""
+"""Orchestration helpers that compose the backend analytical pipeline."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -15,28 +16,36 @@ from src.decision.plans import (
     build_named_plan_table,
     select_named_plans,
 )
+from src.finance.staffing_evaluator import evaluate_staffing_level
 from src.forecasting.uncertainty import build_forecast_result
 from src.forecasting.weighted_moving_average import calculate_weighted_moving_average
-from src.finance.staffing_evaluator import evaluate_staffing_level
 from src.models import (
     CategoryAssumptions,
     ConfidenceTargets,
     ForecastConfiguration,
     SimulationConfiguration,
+    StrategicAssumptions,
     WorkforceAssumptions,
 )
 from src.operations.capacity import (
-    calculate_productive_hours_per_agent,
+    calculate_booking_processing_hours_per_agent,
     calculate_required_agents,
     calculate_required_fte,
+    clamp_inhouse_staffing,
 )
-from src.operations.workload import (
-    calculate_workload_hours,
-    calculate_workload_hours_by_category,
-)
+from src.operations.workload import calculate_workload_hours, calculate_workload_hours_by_category
 from src.simulation.demand_sampler import simulate_weekly_demand
 from src.simulation.monte_carlo import calculate_simulated_workload_and_staffing
-from src.validation import FieldValidationError, validate_non_negative
+from src.simulation.shortage import calculate_overflow_allocation_by_category
+from src.validation import (
+    FieldValidationError,
+    load_scenarios_config,
+    validate_non_negative,
+)
+
+DEFAULT_SCENARIOS_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1] / "config" / "scenarios.json"
+)
 
 CategoryValueMap = dict[str, float]
 DeterministicStaffingResult = dict[str, CategoryValueMap | float | int]
@@ -46,8 +55,6 @@ ApplicationResult = dict[str, Any]
 def _normalize_demand_by_category(
     demand_by_category: Mapping[str, Any],
 ) -> CategoryValueMap:
-    """Validate forecast demand using the shared category contract and validation path."""
-
     if not isinstance(demand_by_category, Mapping):
         raise FieldValidationError("demand_by_category must be a mapping keyed by category")
 
@@ -70,8 +77,6 @@ def _normalize_demand_by_category(
 def _normalize_category_assumptions(
     category_assumptions: Iterable[CategoryAssumptions | Mapping[str, Any]],
 ) -> tuple[CategoryAssumptions, ...]:
-    """Return validated category assumptions from shared models or plain mappings."""
-
     normalized = tuple(
         item
         if isinstance(item, CategoryAssumptions)
@@ -95,8 +100,6 @@ def _normalize_category_assumptions(
 def _normalize_workforce_assumptions(
     workforce_assumptions: WorkforceAssumptions | Mapping[str, Any],
 ) -> WorkforceAssumptions:
-    """Return validated workforce assumptions from a shared model or plain mapping."""
-
     if isinstance(workforce_assumptions, WorkforceAssumptions):
         return workforce_assumptions
     if not isinstance(workforce_assumptions, Mapping):
@@ -109,8 +112,6 @@ def _normalize_workforce_assumptions(
 def _normalize_forecast_configuration(
     forecast_configuration: ForecastConfiguration | Mapping[str, Any],
 ) -> ForecastConfiguration:
-    """Return validated forecast configuration from a shared model or plain mapping."""
-
     if isinstance(forecast_configuration, ForecastConfiguration):
         return forecast_configuration
     if not isinstance(forecast_configuration, Mapping):
@@ -123,8 +124,6 @@ def _normalize_forecast_configuration(
 def _normalize_simulation_configuration(
     simulation_configuration: SimulationConfiguration | Mapping[str, Any],
 ) -> SimulationConfiguration:
-    """Return validated simulation configuration from a shared model or plain mapping."""
-
     if isinstance(simulation_configuration, SimulationConfiguration):
         return simulation_configuration
     if not isinstance(simulation_configuration, Mapping):
@@ -137,8 +136,6 @@ def _normalize_simulation_configuration(
 def _normalize_confidence_targets(
     confidence_targets: ConfidenceTargets | Mapping[str, Any],
 ) -> ConfidenceTargets:
-    """Return validated confidence targets from a shared model or plain mapping."""
-
     if isinstance(confidence_targets, ConfidenceTargets):
         return confidence_targets
     if not isinstance(confidence_targets, Mapping):
@@ -148,12 +145,42 @@ def _normalize_confidence_targets(
     return ConfidenceTargets.from_dict(dict(confidence_targets))
 
 
+def _normalize_strategic_assumptions(
+    strategic_assumptions: StrategicAssumptions | Mapping[str, Any],
+) -> StrategicAssumptions:
+    if isinstance(strategic_assumptions, StrategicAssumptions):
+        return strategic_assumptions
+    if not isinstance(strategic_assumptions, Mapping):
+        raise TypeError(
+            "strategic_assumptions must be a StrategicAssumptions instance or mapping"
+        )
+    return StrategicAssumptions.from_dict(dict(strategic_assumptions))
+
+
+def _resolve_scenario(scenario_name: str | None) -> dict[str, Any]:
+    normalized_name = scenario_name or "Expected Demand"
+    scenarios = load_scenarios_config(DEFAULT_SCENARIOS_CONFIG_PATH)["scenarios"]
+    for scenario in scenarios:
+        if scenario["scenario_name"] == normalized_name:
+            return dict(scenario)
+    raise FieldValidationError(f"unknown scenario_name {normalized_name!r}")
+
+
+def _extract_handling_times(
+    category_assumptions: tuple[CategoryAssumptions, ...],
+) -> dict[str, float]:
+    return {
+        item.category: item.handling_time_minutes
+        for item in category_assumptions
+    }
+
+
 def calculate_deterministic_staffing(
     demand_by_category: Mapping[str, Any],
     category_assumptions: Iterable[CategoryAssumptions | Mapping[str, Any]],
     workforce_assumptions: WorkforceAssumptions | Mapping[str, Any],
 ) -> DeterministicStaffingResult:
-    """Assemble deterministic workload and baseline staffing outputs from shared primitives."""
+    """Assemble deterministic workload, floor/cap, and overflow outputs."""
 
     normalized_demand = _normalize_demand_by_category(demand_by_category)
     normalized_category_assumptions = _normalize_category_assumptions(category_assumptions)
@@ -161,10 +188,7 @@ def calculate_deterministic_staffing(
         workforce_assumptions
     )
 
-    handling_times_minutes = {
-        item.category: item.handling_time_minutes
-        for item in normalized_category_assumptions
-    }
+    handling_times_minutes = _extract_handling_times(normalized_category_assumptions)
     workload_hours_by_category = calculate_workload_hours_by_category(
         normalized_demand,
         handling_times_minutes,
@@ -173,22 +197,37 @@ def calculate_deterministic_staffing(
         normalized_demand,
         handling_times_minutes,
     )
-    productive_hours_per_agent = calculate_productive_hours_per_agent(
-        normalized_workforce_assumptions.paid_hours_per_agent,
-        normalized_workforce_assumptions.productive_processing_pct,
+    booking_processing_hours_per_agent = calculate_booking_processing_hours_per_agent(
+        normalized_workforce_assumptions.weekly_booking_processing_hours_per_agent
     )
-    required_fte = calculate_required_fte(
+    raw_required_fte = calculate_required_fte(
         total_workload_hours,
-        productive_hours_per_agent,
+        booking_processing_hours_per_agent,
     )
-    required_agents = calculate_required_agents(required_fte)
+    unconstrained_required_agents = calculate_required_agents(raw_required_fte)
+    recommended_inhouse_agents = clamp_inhouse_staffing(
+        unconstrained_required_agents,
+        normalized_workforce_assumptions.minimum_schedulable_agents,
+        normalized_workforce_assumptions.maximum_inhouse_agents,
+    )
+    overflow_result = calculate_overflow_allocation_by_category(
+        normalized_demand,
+        handling_times_minutes,
+        recommended_inhouse_agents,
+        booking_processing_hours_per_agent,
+    )
 
     return {
         "workload_hours_by_category": workload_hours_by_category,
         "total_workload_hours": total_workload_hours,
-        "productive_hours_per_agent": productive_hours_per_agent,
-        "required_fte": required_fte,
-        "required_agents": required_agents,
+        "booking_processing_hours_per_agent": booking_processing_hours_per_agent,
+        "raw_required_fte": raw_required_fte,
+        "unconstrained_required_agents": unconstrained_required_agents,
+        "recommended_inhouse_agents": recommended_inhouse_agents,
+        "spare_capacity_hours": float(overflow_result["spare_capacity_hours"]),
+        "overflow_workload_hours": float(overflow_result["overflow_workload_hours"]),
+        "overflow_hours_by_category": dict(overflow_result["overflow_hours_by_category"]),
+        "overflow_bookings_by_category": dict(overflow_result["overflow_bookings_by_category"]),
     }
 
 
@@ -198,8 +237,6 @@ def _lookup_staffing_row(
     *,
     field_name: str,
 ) -> dict[str, Any]:
-    """Return a staffed evaluation row for a given whole-agent staffing level."""
-
     if staffing_agents not in staffing_evaluation_rows:
         raise FieldValidationError(f"{field_name} must exist in the staffing evaluation table")
     return dict(staffing_evaluation_rows[staffing_agents])
@@ -213,8 +250,6 @@ def _build_comparison_table(
     previous_week_staffing: int,
     manager_planned_staffing: int,
 ) -> pd.DataFrame:
-    """Build the comparison table used by the narrative and dashboard preview."""
-
     evaluation_rows = {
         int(row["staffing_agents"]): row
         for row in staffing_evaluation_table.to_dict(orient="records")
@@ -247,9 +282,11 @@ def _build_comparison_table(
                 "plan_name": plan_name,
                 "staffing_agents": int(staffing_agents),
                 "capacity_confidence": float(row["capacity_confidence"]),
-                "expected_overtime_hours": float(row["expected_overtime_hours"]),
-                "expected_abandoned_total": float(row["expected_abandoned_total"]),
-                "expected_total_economic_cost": float(row["expected_total_economic_cost"]),
+                "expected_spare_capacity_hours": float(row["expected_spare_capacity_hours"]),
+                "expected_overflow_workload_hours": float(row["expected_overflow_workload_hours"]),
+                "expected_total_weekly_operating_cost": float(
+                    row["expected_total_weekly_operating_cost"]
+                ),
             }
         )
 
@@ -259,9 +296,9 @@ def _build_comparison_table(
             "plan_name",
             "staffing_agents",
             "capacity_confidence",
-            "expected_overtime_hours",
-            "expected_abandoned_total",
-            "expected_total_economic_cost",
+            "expected_spare_capacity_hours",
+            "expected_overflow_workload_hours",
+            "expected_total_weekly_operating_cost",
         ),
     )
 
@@ -274,11 +311,13 @@ def build_application_result(
     forecast_configuration: ForecastConfiguration | Mapping[str, Any],
     simulation_configuration: SimulationConfiguration | Mapping[str, Any],
     confidence_targets: ConfidenceTargets | Mapping[str, Any],
+    strategic_assumptions: StrategicAssumptions | Mapping[str, Any],
     previous_week_staffing: int | None = None,
     manager_planned_staffing: int | None = None,
     manual_overrides: Mapping[str, float] | None = None,
+    scenario_name: str | None = None,
 ) -> ApplicationResult:
-    """Build the structured application result for the end-to-end dashboard flow."""
+    """Build the structured backend result for the restored analytical pipeline."""
 
     try:
         if not isinstance(history, pd.DataFrame):
@@ -295,38 +334,40 @@ def build_application_result(
             simulation_configuration
         )
         normalized_confidence_targets = _normalize_confidence_targets(confidence_targets)
-
-        if (
-            normalized_forecast_configuration.variability_multiplier
-            != normalized_simulation_configuration.variability_multiplier
-        ):
-            raise FieldValidationError(
-                "forecast_configuration.variability_multiplier must match "
-                "simulation_configuration.variability_multiplier"
-            )
+        normalized_strategic_assumptions = _normalize_strategic_assumptions(
+            strategic_assumptions
+        )
+        scenario = _resolve_scenario(scenario_name)
 
         manual_overrides_payload = dict(manual_overrides or {})
         automatic_forecast = calculate_weighted_moving_average(
             history,
             list(normalized_forecast_configuration.weights),
         )
+        scenario_adjusted_forecast = {
+            category: automatic_forecast[category] * float(scenario["demand_multiplier"])
+            for category in RESERVATION_CATEGORIES
+        }
+        effective_forecast = {
+            category: float(
+                manual_overrides_payload.get(
+                    category,
+                    scenario_adjusted_forecast[category],
+                )
+            )
+            for category in RESERVATION_CATEGORIES
+        }
         forecast_result = build_forecast_result(
             history,
             list(normalized_forecast_configuration.weights),
-            float(normalized_forecast_configuration.variability_multiplier),
+            float(normalized_simulation_configuration.variability_multiplier)
+            * float(scenario["variability_multiplier"]),
+            demand_multiplier=float(scenario["demand_multiplier"]),
             manual_overrides=manual_overrides_payload or None,
         )
 
         deterministic_staffing_result = calculate_deterministic_staffing(
-            {
-                category: float(
-                    forecast_result.loc[
-                        forecast_result["category"] == category,
-                        "point_forecast",
-                    ].iloc[0]
-                )
-                for category in RESERVATION_CATEGORIES
-            },
+            effective_forecast,
             normalized_category_assumptions,
             normalized_workforce_assumptions,
         )
@@ -337,18 +378,13 @@ def build_application_result(
             seed=normalized_simulation_configuration.random_seed,
             distribution_name=normalized_simulation_configuration.distribution_name,
         )
-        handling_times_minutes = {
-            item.category: item.handling_time_minutes
-            for item in normalized_category_assumptions
-        }
-        productive_hours_per_agent = calculate_productive_hours_per_agent(
-            normalized_workforce_assumptions.paid_hours_per_agent,
-            normalized_workforce_assumptions.productive_processing_pct,
-        )
+        handling_times_minutes = _extract_handling_times(normalized_category_assumptions)
         completed_simulation = calculate_simulated_workload_and_staffing(
             simulation_distribution,
             handling_times_minutes,
-            productive_hours_per_agent,
+            normalized_workforce_assumptions.weekly_booking_processing_hours_per_agent,
+            minimum_schedulable_agents=normalized_workforce_assumptions.minimum_schedulable_agents,
+            maximum_inhouse_agents=normalized_workforce_assumptions.maximum_inhouse_agents,
         )
 
         resolved_previous_week_staffing = (
@@ -362,16 +398,31 @@ def build_application_result(
             else int(normalized_workforce_assumptions.planned_staffing_agents)
         )
 
+        feasible_required_agents = completed_simulation["recommended_inhouse_agents"].tolist()
         candidate_staffing_levels = build_candidate_staffing_list(
-            completed_simulation["required_agents"].tolist(),
+            feasible_required_agents,
             previous_week_staffing=resolved_previous_week_staffing,
             manager_planned_staffing=resolved_manager_staffing,
         )
+        candidate_staffing_levels = [
+            staffing
+            for staffing in candidate_staffing_levels
+            if normalized_workforce_assumptions.minimum_schedulable_agents
+            <= staffing
+            <= normalized_workforce_assumptions.maximum_inhouse_agents
+        ]
 
-        named_plan_selections = select_named_plans(
-            completed_simulation["required_agents"].tolist(),
-            normalized_confidence_targets.to_dict(),
-        )
+        named_plan_selections = {
+            name: clamp_inhouse_staffing(
+                staffing,
+                normalized_workforce_assumptions.minimum_schedulable_agents,
+                normalized_workforce_assumptions.maximum_inhouse_agents,
+            )
+            for name, staffing in select_named_plans(
+                feasible_required_agents,
+                normalized_confidence_targets.to_dict(),
+            ).items()
+        }
         candidate_staffing_levels = sorted(
             set(candidate_staffing_levels) | set(named_plan_selections.values())
         )
@@ -382,6 +433,7 @@ def build_application_result(
                 staffing_agents,
                 normalized_category_assumptions,
                 normalized_workforce_assumptions,
+                normalized_strategic_assumptions,
             )
             for staffing_agents in candidate_staffing_levels
         ]
@@ -419,7 +471,10 @@ def build_application_result(
 
         return {
             "ok": True,
+            "scenario": scenario,
             "automatic_forecast": automatic_forecast,
+            "scenario_adjusted_forecast": scenario_adjusted_forecast,
+            "effective_forecast": effective_forecast,
             "forecast_result": forecast_result,
             "deterministic_staffing_result": deterministic_staffing_result,
             "simulation_distribution": simulation_distribution,

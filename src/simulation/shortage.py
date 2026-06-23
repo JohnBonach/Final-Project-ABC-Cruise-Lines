@@ -1,4 +1,4 @@
-"""Shortage allocation helpers for category-level shortage, abandonment, and overtime."""
+"""Overflow allocation helpers for constrained in-house staffing."""
 
 from __future__ import annotations
 
@@ -6,18 +6,17 @@ from collections.abc import Mapping
 from typing import Any
 
 from src.constants import RESERVATION_CATEGORIES
+from src.operations.capacity import calculate_capacity_hours
 from src.operations.workload import MINUTES_PER_HOUR
 from src.validation import (
     FieldValidationError,
-    validate_non_negative_integer,
     validate_non_negative,
-    validate_percentage,
+    validate_non_negative_integer,
     validate_positive,
 )
 
 CategoryValueMap = dict[str, float]
-ShortageAllocationResult = dict[str, CategoryValueMap | float]
-CategoryShortageAllocationResult = dict[str, CategoryValueMap | float]
+OverflowAllocationResult = dict[str, CategoryValueMap | float]
 
 
 def _validate_category_value_map(
@@ -45,48 +44,30 @@ def _validate_category_value_map(
     }
 
 
-def _validate_handling_times_minutes(
-    handling_times_minutes: Mapping[str, Any],
-) -> CategoryValueMap:
-    """Validate canonical handling times and normalize them to positive floats."""
-
-    return _validate_category_value_map(
-        handling_times_minutes,
-        field_name="handling_times_minutes",
-        allow_zero=False,
-    )
-
-
-def _validate_abandonment_rate(abandonment_rate: Any) -> float:
-    """Validate the global abandonment rate as an internal decimal."""
-
-    return validate_percentage("abandonment_rate", abandonment_rate)
-
-
-def calculate_shortage_allocation_by_category(
+def calculate_overflow_allocation_by_category(
     demand_by_category: Mapping[str, Any],
     handling_times_minutes: Mapping[str, Any],
     staffing_agents: Any,
-    productive_hours_per_agent: Any,
-) -> CategoryShortageAllocationResult:
-    """Allocate any regular-capacity shortage proportionally across categories.
-
-    The shortage workload is split by each category's share of total workload hours.
-    The returned category maps preserve the canonical reservation order.
-    """
+    booking_processing_hours_per_agent: Any,
+) -> OverflowAllocationResult:
+    """Allocate any workload above in-house capacity proportionally by workload share."""
 
     normalized_demand = _validate_category_value_map(
         demand_by_category,
         field_name="demand_by_category",
     )
-    normalized_handling_times = _validate_handling_times_minutes(handling_times_minutes)
+    normalized_handling_times = _validate_category_value_map(
+        handling_times_minutes,
+        field_name="handling_times_minutes",
+        allow_zero=False,
+    )
     normalized_staffing_agents = validate_non_negative_integer(
         "staffing_agents",
         staffing_agents,
     )
-    normalized_productive_hours_per_agent = validate_positive(
-        "productive_hours_per_agent",
-        productive_hours_per_agent,
+    normalized_processing_hours = validate_positive(
+        "booking_processing_hours_per_agent",
+        booking_processing_hours_per_agent,
     )
 
     workload_hours_by_category = {
@@ -97,87 +78,53 @@ def calculate_shortage_allocation_by_category(
         for category in RESERVATION_CATEGORIES
     }
     total_workload_hours = sum(workload_hours_by_category.values())
-    regular_capacity_hours = (
-        normalized_staffing_agents * normalized_productive_hours_per_agent
+    inhouse_capacity_hours = calculate_capacity_hours(
+        normalized_staffing_agents,
+        normalized_processing_hours,
     )
-    shortage_workload_hours = max(total_workload_hours - regular_capacity_hours, 0.0)
+    spare_capacity_hours = max(inhouse_capacity_hours - total_workload_hours, 0.0)
+    overflow_workload_hours = max(total_workload_hours - inhouse_capacity_hours, 0.0)
 
-    if total_workload_hours > 0.0 and shortage_workload_hours > 0.0:
-        excess_workload_hours_by_category = {
+    if total_workload_hours > 0.0 and overflow_workload_hours > 0.0:
+        overflow_hours_by_category = {
             category:
                 workload_hours_by_category[category]
                 / total_workload_hours
-                * shortage_workload_hours
+                * overflow_workload_hours
             for category in RESERVATION_CATEGORIES
         }
     else:
-        excess_workload_hours_by_category = {
+        overflow_hours_by_category = {
             category: 0.0
             for category in RESERVATION_CATEGORIES
         }
 
-    excess_reservations_by_category = {
+    overflow_bookings_by_category = {
         category:
-            excess_workload_hours_by_category[category]
-            / (normalized_handling_times[category] / MINUTES_PER_HOUR)
+            overflow_hours_by_category[category]
+            * MINUTES_PER_HOUR
+            / normalized_handling_times[category]
         for category in RESERVATION_CATEGORIES
     }
-    completed_reservations_by_category = {
-        category: normalized_demand[category] - excess_reservations_by_category[category]
+    inhouse_bookings_by_category = {
+        category: normalized_demand[category] - overflow_bookings_by_category[category]
         for category in RESERVATION_CATEGORIES
     }
 
     return {
         "workload_hours_by_category": workload_hours_by_category,
-        "completed_reservations_by_category": completed_reservations_by_category,
-        "excess_reservations_by_category": excess_reservations_by_category,
-        "excess_workload_hours_by_category": excess_workload_hours_by_category,
         "total_workload_hours": total_workload_hours,
-        "regular_capacity_hours": regular_capacity_hours,
-        "shortage_workload_hours": shortage_workload_hours,
-    }
-
-
-def calculate_abandonment_and_overtime(
-    excess_reservations_by_category: Mapping[str, Any],
-    handling_times_minutes: Mapping[str, Any],
-    abandonment_rate: Any,
-) -> ShortageAllocationResult:
-    """Apply abandonment to excess reservations and convert the remainder to overtime."""
-
-    normalized_excess = _validate_category_value_map(
-        excess_reservations_by_category,
-        field_name="excess_reservations_by_category",
-    )
-    normalized_handling_times = _validate_handling_times_minutes(handling_times_minutes)
-    normalized_abandonment_rate = _validate_abandonment_rate(abandonment_rate)
-
-    abandoned_reservations_by_category = {
-        category: normalized_excess[category] * normalized_abandonment_rate
-        for category in RESERVATION_CATEGORIES
-    }
-    overtime_reservations_by_category = {
-        category: normalized_excess[category] - abandoned_reservations_by_category[category]
-        for category in RESERVATION_CATEGORIES
-    }
-
-    overtime_minutes = sum(
-        overtime_reservations_by_category[category] * normalized_handling_times[category]
-        for category in RESERVATION_CATEGORIES
-    )
-    overtime_hours = overtime_minutes / MINUTES_PER_HOUR
-
-    return {
-        "abandoned_reservations_by_category": abandoned_reservations_by_category,
-        "overtime_reservations_by_category": overtime_reservations_by_category,
-        "overtime_hours": overtime_hours,
+        "inhouse_capacity_hours": inhouse_capacity_hours,
+        "spare_capacity_hours": spare_capacity_hours,
+        "overflow_workload_hours": overflow_workload_hours,
+        "overflow_hours_by_category": overflow_hours_by_category,
+        "overflow_bookings_by_category": overflow_bookings_by_category,
+        "inhouse_bookings_by_category": inhouse_bookings_by_category,
     }
 
 
 __all__ = [
     "CategoryValueMap",
-    "CategoryShortageAllocationResult",
-    "ShortageAllocationResult",
-    "calculate_shortage_allocation_by_category",
-    "calculate_abandonment_and_overtime",
+    "OverflowAllocationResult",
+    "calculate_overflow_allocation_by_category",
 ]

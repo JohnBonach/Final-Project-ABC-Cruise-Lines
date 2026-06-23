@@ -68,28 +68,32 @@ def _build_ranked_rows(
     if not records:
         return []
 
-    minimum_cost = min(float(record["expected_total_economic_cost"]) for record in records)
+    minimum_cost = min(
+        float(record["expected_total_weekly_operating_cost"]) for record in records
+    )
 
     def ranking_key(record: dict[str, Any]) -> tuple[float, float, float, int, float]:
-        total_economic_cost = float(record["expected_total_economic_cost"])
-        within_tolerance = total_economic_cost <= minimum_cost + selection_tolerance
+        total_weekly_operating_cost = float(record["expected_total_weekly_operating_cost"])
+        within_tolerance = (
+            total_weekly_operating_cost <= minimum_cost + selection_tolerance
+        )
         capacity_confidence = float(record["capacity_confidence"])
-        expected_abandoned_total = float(record["expected_abandoned_total"])
+        expected_overflow_workload_hours = float(record["expected_overflow_workload_hours"])
         staffing_agents = int(record["staffing_agents"])
 
         if within_tolerance:
             return (
                 0.0,
                 -capacity_confidence,
-                expected_abandoned_total,
+                expected_overflow_workload_hours,
                 staffing_agents,
-                total_economic_cost,
+                total_weekly_operating_cost,
             )
         return (
             1.0,
-            total_economic_cost,
+            total_weekly_operating_cost,
             -capacity_confidence,
-            expected_abandoned_total,
+            expected_overflow_workload_hours,
             staffing_agents,
         )
 
@@ -127,7 +131,7 @@ def select_financial_recommendation(
         "recommended_staffing_agents": recommended_staffing_agents,
         "candidate_ranking": ranked_table,
         "selection_tolerance": normalized_tolerance,
-        "objective_column": "expected_total_economic_cost",
+        "objective_column": "expected_total_weekly_operating_cost",
     }
 
 

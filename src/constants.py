@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from typing import Final
 
-RESERVATION_CATEGORIES: Final[tuple[str, str, str, str]] = (
-    "simple",
-    "standard",
-    "complex_group",
-    "change_cancellation",
+RESERVATION_CATEGORIES: Final[tuple[str, str, str]] = (
+    "day_cruise",
+    "seven_night_cruise",
+    "nine_night_cruise",
 )
+
+CATEGORY_DISPLAY_LABELS: Final[dict[str, str]] = {
+    "day_cruise": "Day / Half-Day Cruise",
+    "seven_night_cruise": "Seven-Night Canada Cruise",
+    "nine_night_cruise": "Nine-Night Canada Cruise",
+}
 
 HISTORICAL_DEMAND_COLUMNS: Final[tuple[str, ...]] = (
     "week_id",
@@ -21,17 +26,21 @@ HISTORICAL_DEMAND_COLUMNS: Final[tuple[str, ...]] = (
 CATEGORY_ASSUMPTIONS_COLUMNS: Final[tuple[str, ...]] = (
     "category",
     "handling_time_minutes",
-    "average_revenue",
-    "contribution_per_reservation",
+    "average_booking_value",
 )
 
 WORKFORCE_ASSUMPTION_FIELDS: Final[tuple[str, ...]] = (
     "paid_hours_per_agent",
-    "productive_processing_pct",
+    "weekly_booking_processing_hours_per_agent",
     "regular_hourly_wage",
-    "overtime_multiplier",
-    "abandonment_rate",
+    "minimum_schedulable_agents",
+    "maximum_inhouse_agents",
     "planned_staffing_agents",
+)
+
+STRATEGIC_ASSUMPTION_FIELDS: Final[tuple[str, ...]] = (
+    "third_party_commission_rate",
+    "inhouse_capture_target",
 )
 
 FORECAST_RESULT_COLUMNS: Final[tuple[str, ...]] = (
@@ -60,22 +69,18 @@ SIMULATION_OUTPUT_COLUMNS: Final[tuple[str, ...]] = (
 STAFFING_EVALUATION_COLUMNS: Final[tuple[str, ...]] = (
     "staffing_agents",
     "capacity_confidence",
-    "probability_overtime_required",
-    "expected_overtime_hours",
-    "expected_abandoned_total",
-    "expected_abandoned_simple",
-    "expected_abandoned_standard",
-    "expected_abandoned_complex_group",
-    "expected_abandoned_change_cancellation",
+    "probability_overflow_required",
+    "expected_spare_capacity_hours",
+    "expected_overflow_workload_hours",
+    "expected_overflow_day_cruise",
+    "expected_overflow_seven_night_cruise",
+    "expected_overflow_nine_night_cruise",
     "regular_labor_cost",
-    "expected_overtime_cost",
-    "expected_lost_revenue",
-    "expected_lost_contribution",
-    "expected_total_economic_cost",
-    "expected_retained_revenue",
-    "expected_retained_contribution",
-    "expected_net_contribution",
-    "expected_unused_regular_hours",
+    "expected_overflow_commission",
+    "expected_total_weekly_operating_cost",
+    "expected_inhouse_booking_value",
+    "expected_overflow_booking_value",
+    "expected_commission_avoided",
 )
 
 NAMED_PLAN_COLUMNS: Final[tuple[str, ...]] = (

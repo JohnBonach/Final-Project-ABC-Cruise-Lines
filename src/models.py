@@ -10,6 +10,7 @@ from src.constants import (
     FORECAST_SOURCES,
     RESERVATION_CATEGORIES,
     SIMULATION_SUPPORTED_DISTRIBUTIONS,
+    STRATEGIC_ASSUMPTION_FIELDS,
 )
 
 
@@ -60,23 +61,18 @@ def _dataclass_field_names(model_type: type[Any]) -> tuple[str, ...]:
 
 @dataclass(frozen=True, slots=True)
 class CategoryAssumptions:
-    """Shared category-level operational and economic assumptions."""
+    """Shared category-level operational assumptions."""
 
     category: str
     handling_time_minutes: float
-    average_revenue: float
-    contribution_per_reservation: float
+    average_booking_value: float
 
     _FIELD_NAMES: ClassVar[tuple[str, ...]]
 
     def __post_init__(self) -> None:
         _validate_category(self.category)
         _validate_positive("handling_time_minutes", self.handling_time_minutes)
-        _validate_non_negative("average_revenue", self.average_revenue)
-        _validate_non_negative(
-            "contribution_per_reservation",
-            self.contribution_per_reservation,
-        )
+        _validate_non_negative("average_booking_value", self.average_booking_value)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a plain dictionary using the canonical contract field names."""
@@ -99,26 +95,42 @@ class WorkforceAssumptions:
     """Shared workforce planning assumptions."""
 
     paid_hours_per_agent: float
-    productive_processing_pct: float
+    weekly_booking_processing_hours_per_agent: float
     regular_hourly_wage: float
-    overtime_multiplier: float
-    abandonment_rate: float
+    minimum_schedulable_agents: int
+    maximum_inhouse_agents: int
     planned_staffing_agents: int
 
     _FIELD_NAMES: ClassVar[tuple[str, ...]]
 
     def __post_init__(self) -> None:
         _validate_positive("paid_hours_per_agent", self.paid_hours_per_agent)
-        _validate_decimal(
-            "productive_processing_pct",
-            self.productive_processing_pct,
+        _validate_positive(
+            "weekly_booking_processing_hours_per_agent",
+            self.weekly_booking_processing_hours_per_agent,
         )
+        if self.weekly_booking_processing_hours_per_agent > self.paid_hours_per_agent:
+            raise ValueError(
+                "weekly_booking_processing_hours_per_agent must not exceed paid_hours_per_agent"
+            )
         _validate_non_negative("regular_hourly_wage", self.regular_hourly_wage)
-        if self.overtime_multiplier < 1.0:
-            raise ValueError("overtime_multiplier must be at least 1.0")
-        _validate_decimal("abandonment_rate", self.abandonment_rate)
+        if self.minimum_schedulable_agents < 0:
+            raise ValueError("minimum_schedulable_agents must be non-negative")
+        if self.maximum_inhouse_agents < self.minimum_schedulable_agents:
+            raise ValueError(
+                "maximum_inhouse_agents must be greater than or equal to minimum_schedulable_agents"
+            )
         if self.planned_staffing_agents < 0:
             raise ValueError("planned_staffing_agents must be non-negative")
+
+    @property
+    def direct_booking_share(self) -> float:
+        """Return the share of paid time available for direct booking processing."""
+
+        return (
+            self.weekly_booking_processing_hours_per_agent
+            / self.paid_hours_per_agent
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """Return a plain dictionary using the canonical contract field names."""
@@ -134,6 +146,35 @@ class WorkforceAssumptions:
 
 
 WorkforceAssumptions._FIELD_NAMES = _dataclass_field_names(WorkforceAssumptions)
+
+
+@dataclass(frozen=True, slots=True)
+class StrategicAssumptions:
+    """Shared strategic business-case assumptions kept separate from weekly staffing."""
+
+    third_party_commission_rate: float
+    inhouse_capture_target: float
+
+    _FIELD_NAMES: ClassVar[tuple[str, ...]]
+
+    def __post_init__(self) -> None:
+        _validate_decimal("third_party_commission_rate", self.third_party_commission_rate)
+        _validate_decimal("inhouse_capture_target", self.inhouse_capture_target)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a plain dictionary using the canonical contract field names."""
+
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "StrategicAssumptions":
+        """Build the model from a dictionary with exact contract keys."""
+
+        _require_exact_keys(cls.__name__, data, STRATEGIC_ASSUMPTION_FIELDS)
+        return cls(**data)
+
+
+StrategicAssumptions._FIELD_NAMES = _dataclass_field_names(StrategicAssumptions)
 
 
 @dataclass(frozen=True, slots=True)

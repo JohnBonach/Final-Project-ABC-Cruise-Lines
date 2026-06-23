@@ -1,38 +1,29 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "category_assumptions": [
     {
-      "category": "simple",
-      "handling_time_minutes": 15.0,
-      "average_revenue": 400.0,
-      "contribution_per_reservation": 80.0
+      "category": "day_cruise",
+      "handling_time_minutes": 8.0,
+      "average_booking_value": 500.0
     },
     {
-      "category": "standard",
-      "handling_time_minutes": 35.0,
-      "average_revenue": 1800.0,
-      "contribution_per_reservation": 360.0
+      "category": "seven_night_cruise",
+      "handling_time_minutes": 22.0,
+      "average_booking_value": 2200.0
     },
     {
-      "category": "complex_group",
-      "handling_time_minutes": 75.0,
-      "average_revenue": 6000.0,
-      "contribution_per_reservation": 1200.0
-    },
-    {
-      "category": "change_cancellation",
-      "handling_time_minutes": 20.0,
-      "average_revenue": 75.0,
-      "contribution_per_reservation": 25.0
+      "category": "nine_night_cruise",
+      "handling_time_minutes": 28.0,
+      "average_booking_value": 2800.0
     }
   ],
   "workforce_assumptions": {
     "paid_hours_per_agent": 40.0,
-    "productive_processing_pct": 0.85,
+    "weekly_booking_processing_hours_per_agent": 12.5,
     "regular_hourly_wage": 22.0,
-    "overtime_multiplier": 1.5,
-    "abandonment_rate": 0.1,
-    "planned_staffing_agents": 9
+    "minimum_schedulable_agents": 8,
+    "maximum_inhouse_agents": 12,
+    "planned_staffing_agents": 10
   },
   "forecast_configuration": {
     "weights": [
@@ -54,5 +45,9 @@
     "lean": 0.5,
     "balanced": 0.85,
     "conservative": 0.95
+  },
+  "strategic_assumptions": {
+    "third_party_commission_rate": 0.125,
+    "inhouse_capture_target": 0.5
   }
 }

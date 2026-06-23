@@ -1,4 +1,4 @@
-"""Category-level financial primitives for retained and lost reservation value."""
+"""Category-level financial helpers for in-house handling and overflow commission."""
 
 from __future__ import annotations
 
@@ -7,7 +7,11 @@ from typing import Any
 
 from src.constants import RESERVATION_CATEGORIES
 from src.models import CategoryAssumptions
-from src.validation import FieldValidationError, validate_non_negative
+from src.validation import (
+    FieldValidationError,
+    validate_non_negative,
+    validate_percentage,
+)
 
 CategoryValueMap = dict[str, float]
 CategoryFinancialResult = dict[str, CategoryValueMap | float]
@@ -39,7 +43,7 @@ def _validate_category_metric_map(
 def _normalize_category_assumptions(
     category_assumptions: Iterable[CategoryAssumptions | Mapping[str, Any]],
 ) -> tuple[CategoryAssumptions, ...]:
-    """Validate category assumption records using the shared model contract."""
+    """Validate category-assumption records using the shared contract."""
 
     normalized = tuple(
         item
@@ -61,40 +65,28 @@ def _normalize_category_assumptions(
     return normalized
 
 
-def extract_average_revenue_by_category(
+def extract_average_booking_value_by_category(
     category_assumptions: Iterable[CategoryAssumptions | Mapping[str, Any]],
 ) -> CategoryValueMap:
-    """Build the canonical average-revenue lookup from shared category assumptions."""
+    """Build the canonical average-booking-value lookup."""
 
     normalized = _normalize_category_assumptions(category_assumptions)
-    return {item.category: item.average_revenue for item in normalized}
+    return {item.category: item.average_booking_value for item in normalized}
 
 
-def extract_contribution_by_category(
-    category_assumptions: Iterable[CategoryAssumptions | Mapping[str, Any]],
+def calculate_booking_value_by_category(
+    booking_counts_by_category: Mapping[str, Any],
+    average_booking_value_by_category: Mapping[str, Any],
 ) -> CategoryValueMap:
-    """Build the canonical contribution-value lookup from shared category assumptions."""
-
-    normalized = _normalize_category_assumptions(category_assumptions)
-    return {item.category: item.contribution_per_reservation for item in normalized}
-
-
-def _calculate_category_values(
-    reservation_counts: Mapping[str, Any],
-    value_by_category: Mapping[str, Any],
-    *,
-    count_field_name: str,
-    value_field_name: str,
-) -> CategoryValueMap:
-    """Multiply validated category counts by validated category financial values."""
+    """Calculate category-level booking value from counts and average values."""
 
     normalized_counts = _validate_category_metric_map(
-        reservation_counts,
-        field_name=count_field_name,
+        booking_counts_by_category,
+        field_name="booking_counts_by_category",
     )
     normalized_values = _validate_category_metric_map(
-        value_by_category,
-        field_name=value_field_name,
+        average_booking_value_by_category,
+        field_name="average_booking_value_by_category",
     )
     return {
         category: normalized_counts[category] * normalized_values[category]
@@ -102,107 +94,69 @@ def _calculate_category_values(
     }
 
 
-def calculate_retained_revenue(
-    completed_reservations_by_category: Mapping[str, Any],
-    average_revenue_by_category: Mapping[str, Any],
+def calculate_overflow_commission_by_category(
+    overflow_bookings_by_category: Mapping[str, Any],
+    average_booking_value_by_category: Mapping[str, Any],
+    third_party_commission_rate: float,
 ) -> CategoryValueMap:
-    """Calculate retained revenue by category from completed reservations."""
+    """Calculate overflow commission costs by category."""
 
-    return _calculate_category_values(
-        completed_reservations_by_category,
-        average_revenue_by_category,
-        count_field_name="completed_reservations_by_category",
-        value_field_name="average_revenue_by_category",
+    normalized_commission_rate = validate_percentage(
+        "third_party_commission_rate",
+        third_party_commission_rate,
     )
-
-
-def calculate_retained_contribution(
-    completed_reservations_by_category: Mapping[str, Any],
-    contribution_by_category: Mapping[str, Any],
-) -> CategoryValueMap:
-    """Calculate retained contribution by category from completed reservations."""
-
-    return _calculate_category_values(
-        completed_reservations_by_category,
-        contribution_by_category,
-        count_field_name="completed_reservations_by_category",
-        value_field_name="contribution_by_category",
+    overflow_booking_value = calculate_booking_value_by_category(
+        overflow_bookings_by_category,
+        average_booking_value_by_category,
     )
+    return {
+        category: overflow_booking_value[category] * normalized_commission_rate
+        for category in RESERVATION_CATEGORIES
+    }
 
 
-def calculate_lost_revenue(
-    abandoned_reservations_by_category: Mapping[str, Any],
-    average_revenue_by_category: Mapping[str, Any],
-) -> CategoryValueMap:
-    """Calculate lost revenue by category from abandoned reservations."""
-
-    return _calculate_category_values(
-        abandoned_reservations_by_category,
-        average_revenue_by_category,
-        count_field_name="abandoned_reservations_by_category",
-        value_field_name="average_revenue_by_category",
-    )
-
-
-def calculate_lost_contribution(
-    abandoned_reservations_by_category: Mapping[str, Any],
-    contribution_by_category: Mapping[str, Any],
-) -> CategoryValueMap:
-    """Calculate lost contribution by category from abandoned reservations."""
-
-    return _calculate_category_values(
-        abandoned_reservations_by_category,
-        contribution_by_category,
-        count_field_name="abandoned_reservations_by_category",
-        value_field_name="contribution_by_category",
-    )
-
-
-def calculate_category_financials(
-    completed_reservations_by_category: Mapping[str, Any],
-    abandoned_reservations_by_category: Mapping[str, Any],
+def calculate_weekly_operating_financials(
+    inhouse_bookings_by_category: Mapping[str, Any],
+    overflow_bookings_by_category: Mapping[str, Any],
     category_assumptions: Iterable[CategoryAssumptions | Mapping[str, Any]],
+    third_party_commission_rate: float,
 ) -> CategoryFinancialResult:
-    """Return category-preserving retained and lost revenue and contribution outputs."""
+    """Return the booking-value and overflow-commission outputs for one workload outcome."""
 
-    average_revenue_by_category = extract_average_revenue_by_category(category_assumptions)
-    contribution_by_category = extract_contribution_by_category(category_assumptions)
-
-    retained_revenue = calculate_retained_revenue(
-        completed_reservations_by_category,
-        average_revenue_by_category,
+    average_booking_value_by_category = extract_average_booking_value_by_category(
+        category_assumptions
     )
-    retained_contribution = calculate_retained_contribution(
-        completed_reservations_by_category,
-        contribution_by_category,
+    inhouse_booking_value_by_category = calculate_booking_value_by_category(
+        inhouse_bookings_by_category,
+        average_booking_value_by_category,
     )
-    lost_revenue = calculate_lost_revenue(
-        abandoned_reservations_by_category,
-        average_revenue_by_category,
+    overflow_booking_value_by_category = calculate_booking_value_by_category(
+        overflow_bookings_by_category,
+        average_booking_value_by_category,
     )
-    lost_contribution = calculate_lost_contribution(
-        abandoned_reservations_by_category,
-        contribution_by_category,
+    overflow_commission_by_category = calculate_overflow_commission_by_category(
+        overflow_bookings_by_category,
+        average_booking_value_by_category,
+        third_party_commission_rate,
     )
 
     return {
-        "retained_revenue_by_category": retained_revenue,
-        "retained_contribution_by_category": retained_contribution,
-        "lost_revenue_by_category": lost_revenue,
-        "lost_contribution_by_category": lost_contribution,
-        "total_retained_revenue": sum(retained_revenue.values()),
-        "total_retained_contribution": sum(retained_contribution.values()),
-        "total_lost_revenue": sum(lost_revenue.values()),
-        "total_lost_contribution": sum(lost_contribution.values()),
+        "inhouse_booking_value_by_category": inhouse_booking_value_by_category,
+        "overflow_booking_value_by_category": overflow_booking_value_by_category,
+        "overflow_commission_by_category": overflow_commission_by_category,
+        "total_inhouse_booking_value": sum(inhouse_booking_value_by_category.values()),
+        "total_overflow_booking_value": sum(overflow_booking_value_by_category.values()),
+        "total_overflow_commission": sum(overflow_commission_by_category.values()),
+        "total_commission_avoided": sum(
+            inhouse_booking_value_by_category[category] * third_party_commission_rate
+            for category in RESERVATION_CATEGORIES
+        ),
     }
 
 
 __all__ = [
-    "calculate_category_financials",
-    "calculate_lost_contribution",
-    "calculate_lost_revenue",
-    "calculate_retained_contribution",
-    "calculate_retained_revenue",
-    "extract_average_revenue_by_category",
-    "extract_contribution_by_category",
+    "calculate_booking_value_by_category",
+    "calculate_overflow_commission_by_category",
+    "calculate_weekly_operating_financials",
+    "extract_average_booking_value_by_category",
 ]

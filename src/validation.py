@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from numbers import Integral, Real
 from pathlib import Path
-from typing import TypeAlias
 from typing import Any
+from typing import TypeAlias
 
 import numpy as np
 
@@ -16,6 +16,7 @@ from src.models import (
     ConfidenceTargets,
     ForecastConfiguration,
     SimulationConfiguration,
+    StrategicAssumptions,
     WorkforceAssumptions,
 )
 
@@ -30,6 +31,7 @@ DEFAULTS_TOP_LEVEL_FIELDS = (
     "forecast_configuration",
     "simulation_configuration",
     "confidence_targets",
+    "strategic_assumptions",
 )
 SCENARIOS_TOP_LEVEL_FIELDS = (
     "schema_version",
@@ -308,6 +310,9 @@ def validate_defaults_config(payload: dict[str, Any]) -> dict[str, Any]:
         raise FieldValidationError(f"simulation_configuration.{exc}") from exc
     simulation_configuration = SimulationConfiguration.from_dict(simulation_payload)
     confidence_targets = ConfidenceTargets.from_dict(payload["confidence_targets"])
+    strategic_assumptions = StrategicAssumptions.from_dict(
+        payload["strategic_assumptions"]
+    )
 
     if (
         simulation_configuration.variability_multiplier
@@ -334,6 +339,7 @@ def validate_defaults_config(payload: dict[str, Any]) -> dict[str, Any]:
         "forecast_configuration": forecast_configuration,
         "simulation_configuration": simulation_configuration,
         "confidence_targets": confidence_targets,
+        "strategic_assumptions": strategic_assumptions,
     }
 
 

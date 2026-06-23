@@ -76,21 +76,31 @@ def assemble_forecast_result(
     history: pd.DataFrame,
     weights: list[float],
     variability_multiplier: float,
+    demand_multiplier: float = 1.0,
     manual_overrides: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Assemble the canonical forecast-result table."""
 
     point_forecast = calculate_weighted_moving_average(history, weights)
     historical_stats = calculate_historical_uncertainty(history, variability_multiplier)
+    normalized_demand_multiplier = validate_non_negative(
+        "demand_multiplier",
+        demand_multiplier,
+    )
     overrides = _normalize_manual_overrides(manual_overrides)
 
     records: list[dict[str, object]] = []
     for category in RESERVATION_CATEGORIES:
+        scenario_adjusted_forecast = float(
+            point_forecast[category] * normalized_demand_multiplier
+        )
         is_manual = category in overrides
         records.append(
             {
                 "category": category,
-                "point_forecast": float(overrides.get(category, point_forecast[category])),
+                "point_forecast": float(
+                    overrides.get(category, scenario_adjusted_forecast)
+                ),
                 "historical_mean": float(historical_stats[category]["historical_mean"]),
                 "historical_std": float(historical_stats[category]["historical_std"]),
                 "adjusted_std": float(historical_stats[category]["adjusted_std"]),
@@ -105,6 +115,7 @@ def build_forecast_result(
     history: pd.DataFrame,
     weights: list[float],
     variability_multiplier: float,
+    demand_multiplier: float = 1.0,
     manual_overrides: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Alias for assembling the canonical forecast-result table."""
@@ -113,6 +124,7 @@ def build_forecast_result(
         history,
         weights,
         variability_multiplier,
+        demand_multiplier=demand_multiplier,
         manual_overrides=manual_overrides,
     )
 

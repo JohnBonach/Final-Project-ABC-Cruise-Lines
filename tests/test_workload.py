@@ -1,4 +1,4 @@
-"""Operations tests for deterministic workload and capacity calculations."""
+"""Operations tests for workload and capacity calculations."""
 
 from __future__ import annotations
 
@@ -6,9 +6,11 @@ import unittest
 
 from src.constants import RESERVATION_CATEGORIES
 from src.operations.capacity import (
-    calculate_productive_hours_per_agent,
+    calculate_booking_processing_hours_per_agent,
+    calculate_capacity_hours,
     calculate_required_agents,
     calculate_required_fte,
+    clamp_inhouse_staffing,
 )
 from src.operations.workload import (
     MINUTES_PER_HOUR,
@@ -19,186 +21,81 @@ from src.operations.workload import (
 
 
 class WorkloadTests(unittest.TestCase):
-    def test_workload_is_calculated_by_category_in_canonical_order(self) -> None:
-        demand_by_category = {
-            "simple": 12,
-            "standard": 8,
-            "complex_group": 4,
-            "change_cancellation": 6,
-        }
-        handling_times_minutes = {
-            "simple": 10,
-            "standard": 15,
-            "complex_group": 30,
-            "change_cancellation": 20,
+    def _build_demand(self) -> dict[str, int]:
+        return {
+            "day_cruise": 300,
+            "seven_night_cruise": 200,
+            "nine_night_cruise": 130,
         }
 
+    def _build_handling_times(self) -> dict[str, float]:
+        return {
+            "day_cruise": 8.0,
+            "seven_night_cruise": 22.0,
+            "nine_night_cruise": 28.0,
+        }
+
+    def test_peak_case_workload_matches_approved_result(self) -> None:
         workload_minutes = calculate_workload_minutes_by_category(
-            demand_by_category,
-            handling_times_minutes,
+            self._build_demand(),
+            self._build_handling_times(),
         )
         workload_hours = calculate_workload_hours_by_category(
-            demand_by_category,
-            handling_times_minutes,
-        )
-
-        self.assertEqual(tuple(workload_minutes), RESERVATION_CATEGORIES)
-        self.assertEqual(tuple(workload_hours), RESERVATION_CATEGORIES)
-        self.assertEqual(
-            workload_minutes,
-            {
-                "simple": 120.0,
-                "standard": 120.0,
-                "complex_group": 120.0,
-                "change_cancellation": 120.0,
-            },
-        )
-        self.assertEqual(
-            workload_hours,
-            {
-                "simple": 2.0,
-                "standard": 2.0,
-                "complex_group": 2.0,
-                "change_cancellation": 2.0,
-            },
-        )
-
-    def test_zero_demand_returns_zero_workload_for_every_category(self) -> None:
-        demand_by_category = {
-            "simple": 0,
-            "standard": 0,
-            "complex_group": 0,
-            "change_cancellation": 0,
-        }
-        handling_times_minutes = {
-            "simple": 10,
-            "standard": 15,
-            "complex_group": 30,
-            "change_cancellation": 20,
-        }
-
-        workload_minutes = calculate_workload_minutes_by_category(
-            demand_by_category,
-            handling_times_minutes,
-        )
-        workload_hours = calculate_workload_hours_by_category(
-            demand_by_category,
-            handling_times_minutes,
+            self._build_demand(),
+            self._build_handling_times(),
         )
         total_workload_hours = calculate_workload_hours(
-            demand_by_category,
-            handling_times_minutes,
+            self._build_demand(),
+            self._build_handling_times(),
         )
 
         self.assertEqual(tuple(workload_minutes), RESERVATION_CATEGORIES)
         self.assertEqual(tuple(workload_hours), RESERVATION_CATEGORIES)
-        self.assertEqual(
-            workload_minutes,
-            {
-                "simple": 0.0,
-                "standard": 0.0,
-                "complex_group": 0.0,
-                "change_cancellation": 0.0,
-            },
-        )
-        self.assertEqual(
-            workload_hours,
-            {
-                "simple": 0.0,
-                "standard": 0.0,
-                "complex_group": 0.0,
-                "change_cancellation": 0.0,
-            },
-        )
-        self.assertEqual(total_workload_hours, 0.0)
+        self.assertAlmostEqual(workload_minutes["day_cruise"], 2400.0)
+        self.assertAlmostEqual(workload_minutes["seven_night_cruise"], 4400.0)
+        self.assertAlmostEqual(workload_minutes["nine_night_cruise"], 3640.0)
+        self.assertAlmostEqual(workload_hours["day_cruise"], 40.0)
+        self.assertAlmostEqual(workload_hours["seven_night_cruise"], 73.3333333333)
+        self.assertAlmostEqual(workload_hours["nine_night_cruise"], 60.6666666667)
+        self.assertAlmostEqual(total_workload_hours, 174.0)
+        self.assertAlmostEqual(total_workload_hours * MINUTES_PER_HOUR, 10440.0)
 
-    def test_one_category_only_case_keeps_canonical_keys(self) -> None:
-        demand_by_category = {
-            "simple": 20,
-            "standard": 0,
-            "complex_group": 0,
-            "change_cancellation": 0,
-        }
-        handling_times_minutes = {
-            "simple": 12,
-            "standard": 15,
-            "complex_group": 30,
-            "change_cancellation": 20,
-        }
-
-        workload_hours = calculate_workload_hours_by_category(
-            demand_by_category,
-            handling_times_minutes,
+    def test_capacity_floor_and_cap_match_approved_rules(self) -> None:
+        booking_processing_hours_per_agent = calculate_booking_processing_hours_per_agent(12.5)
+        raw_required_fte = calculate_required_fte(174.0, booking_processing_hours_per_agent)
+        unconstrained_required_agents = calculate_required_agents(raw_required_fte)
+        recommended_inhouse_agents = clamp_inhouse_staffing(
+            unconstrained_required_agents,
+            8,
+            12,
         )
 
-        self.assertEqual(tuple(workload_hours), RESERVATION_CATEGORIES)
-        self.assertEqual(
-            workload_hours,
-            {
-                "simple": 4.0,
-                "standard": 0.0,
-                "complex_group": 0.0,
-                "change_cancellation": 0.0,
-            },
-        )
-        self.assertEqual(
-            calculate_workload_hours(demand_by_category, handling_times_minutes),
-            4.0,
-        )
+        self.assertAlmostEqual(raw_required_fte, 13.92)
+        self.assertEqual(unconstrained_required_agents, 14)
+        self.assertEqual(recommended_inhouse_agents, 12)
+        self.assertAlmostEqual(calculate_capacity_hours(12, 12.5), 150.0)
 
-    def test_total_workload_hours_sum_category_hours(self) -> None:
-        demand_by_category = {
-            "simple": 12,
-            "standard": 8,
-            "complex_group": 4,
-            "change_cancellation": 6,
-        }
-        handling_times_minutes = {
-            "simple": 10,
-            "standard": 15,
-            "complex_group": 30,
-            "change_cancellation": 20,
-        }
-
+    def test_low_case_uses_operating_floor(self) -> None:
         workload_hours = calculate_workload_hours(
-            demand_by_category,
-            handling_times_minutes,
+            {
+                "day_cruise": 145,
+                "seven_night_cruise": 90,
+                "nine_night_cruise": 45,
+            },
+            self._build_handling_times(),
+        )
+        raw_required_fte = calculate_required_fte(workload_hours, 12.5)
+        unconstrained_required_agents = calculate_required_agents(raw_required_fte)
+        recommended_inhouse_agents = clamp_inhouse_staffing(
+            unconstrained_required_agents,
+            8,
+            12,
         )
 
-        self.assertEqual(workload_hours, 8.0)
-        self.assertEqual(
-            workload_hours,
-            sum(
-                calculate_workload_hours_by_category(
-                    demand_by_category,
-                    handling_times_minutes,
-                ).values()
-            ),
-        )
-        self.assertEqual(workload_hours * MINUTES_PER_HOUR, 480.0)
-
-    def test_productive_hours_fte_and_rounding_behave_as_expected(self) -> None:
-        productive_hours_per_agent = calculate_productive_hours_per_agent(40.0, 0.75)
-        required_fte = calculate_required_fte(8.0, productive_hours_per_agent)
-
-        self.assertEqual(productive_hours_per_agent, 30.0)
-        self.assertAlmostEqual(required_fte, 8.0 / 30.0)
-        self.assertEqual(calculate_required_agents(required_fte), 1)
-
-    def test_productive_hours_reject_invalid_percentage(self) -> None:
-        with self.assertRaisesRegex(ValueError, "between 0.0 and 1.0 inclusive"):
-            calculate_productive_hours_per_agent(40.0, 1.2)
-
-    def test_productive_hours_reject_zero_capacity(self) -> None:
-        with self.assertRaisesRegex(
-            ValueError,
-            "productive hours per agent must be greater than 0",
-        ):
-            calculate_productive_hours_per_agent(40.0, 0.0)
-
-    def test_required_agents_rounds_up_to_next_whole_agent(self) -> None:
-        self.assertEqual(calculate_required_agents(2.0), 2)
-        self.assertEqual(calculate_required_agents(2.01), 3)
+        self.assertAlmostEqual(workload_hours, 73.3333333333)
+        self.assertAlmostEqual(raw_required_fte, 5.8666666667)
+        self.assertEqual(unconstrained_required_agents, 6)
+        self.assertEqual(recommended_inhouse_agents, 8)
 
 
 if __name__ == "__main__":
