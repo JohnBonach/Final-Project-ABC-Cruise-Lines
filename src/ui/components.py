@@ -56,6 +56,27 @@ state = _load_ui_module(
     ),
 )
 
+build_financial_breakdown_frame = charts.build_financial_breakdown_frame
+build_forecast_breakdown_frame = charts.build_forecast_breakdown_frame
+build_history_display_frame_with_labels = charts.build_history_display_frame_with_labels
+build_methodology_points = charts.build_methodology_points
+build_overflow_detail_frame = charts.build_overflow_detail_frame
+build_results_export_frames = charts.build_results_export_frames
+build_staffing_capacity_frame = charts.build_staffing_capacity_frame
+build_workload_breakdown_frame = charts.build_workload_breakdown_frame
+
+category_assumption_key = state.category_assumption_key
+decimal_to_percent = state.decimal_to_percent
+initialize_session_state = state.initialize_session_state
+manual_override_enabled_key = state.manual_override_enabled_key
+manual_override_value_key = state.manual_override_value_key
+reset_session_state = state.reset_session_state
+run_analysis_for_current_draft = state.run_analysis_for_current_draft
+simulation_control_key = state.simulation_control_key
+strategic_control_key = state.strategic_control_key
+update_draft_inputs_from_widgets = state.update_draft_inputs_from_widgets
+workforce_control_key = state.workforce_control_key
+
 BASE_PATH = Path(__file__).resolve().parents[2]
 HISTORY_PATH = BASE_PATH / "data" / "synthetic_history.csv"
 DEFAULTS_PATH = BASE_PATH / "config" / "defaults.json"
