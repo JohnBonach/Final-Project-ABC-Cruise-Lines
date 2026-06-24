@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
 from pathlib import Path
 
@@ -11,7 +12,15 @@ if str(_project_root) not in sys.path:
 
 import streamlit as st
 
-from src.ui import components
+
+def _load_components_module():
+    """Load a fresh UI components module when Streamlit leaves a partial import cached."""
+    module = importlib.import_module("src.ui.components")
+    if hasattr(module, "render_main_dashboard"):
+        return module
+
+    sys.modules.pop("src.ui.components", None)
+    return importlib.import_module("src.ui.components")
 
 
 def main() -> None:
@@ -20,6 +29,7 @@ def main() -> None:
         page_icon="\U0001f6a2",
         layout="wide",
     )
+    components = _load_components_module()
     components.render_main_dashboard()
 
 
