@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "scenarios": [
+    {
+      "scenario_name": "Low Demand",
+      "demand_multiplier": 0.85,
+      "variability_multiplier": 0.75,
+      "description": "Legacy compatibility scenario retained only to prevent older deployments from failing on startup."
+    },
+    {
+      "scenario_name": "Expected Demand",
+      "demand_multiplier": 1.0,
+      "variability_multiplier": 1.0,
+      "description": "Legacy compatibility scenario aligned with the baseline forecast."
+    },
+    {
+      "scenario_name": "High Demand",
+      "demand_multiplier": 1.15,
+      "variability_multiplier": 1.25,
+      "description": "Legacy compatibility scenario representing elevated demand and volatility."
+    }
+  ]
+}
