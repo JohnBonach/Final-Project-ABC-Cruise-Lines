@@ -14,9 +14,6 @@ from src.constants import CONFIDENCE_TARGET_FIELDS, NAMED_PLAN_COLUMNS
 from src.models import validate_confidence_target_name
 from src.validation import FieldValidationError, validate_non_negative_integer, validate_percentage
 
-DEFAULT_CANDIDATE_LOW_PERCENTILE = 0.05
-DEFAULT_CANDIDATE_HIGH_PERCENTILE = 0.95
-
 PLAN_NAME_BY_TARGET = {
     "lean": "Lean",
     "balanced": "Balanced",
@@ -41,27 +38,6 @@ def _validate_required_agents(required_agents: Sequence[int | float]) -> np.ndar
         raise FieldValidationError("required_agents must contain whole-agent values")
 
     return normalized.astype(int, copy=False)
-
-
-def _validate_candidate_percentile_bounds(
-    candidate_low_percentile: float,
-    candidate_high_percentile: float,
-) -> tuple[float, float]:
-    """Validate the explicit candidate-range percentile bounds."""
-
-    normalized_low = validate_percentage(
-        "candidate_low_percentile",
-        candidate_low_percentile,
-    )
-    normalized_high = validate_percentage(
-        "candidate_high_percentile",
-        candidate_high_percentile,
-    )
-    if normalized_low > normalized_high:
-        raise FieldValidationError(
-            "candidate_low_percentile must be less than or equal to candidate_high_percentile"
-        )
-    return normalized_low, normalized_high
 
 
 def _validate_confidence_targets(
@@ -107,40 +83,24 @@ def _higher_quantile(required_agents: np.ndarray, percentile: float) -> int:
 
 
 def build_candidate_staffing_list(
-    required_agents: Sequence[int | float],
-    *,
-    previous_week_staffing: int | None = None,
-    manager_planned_staffing: int | None = None,
-    candidate_low_percentile: float = DEFAULT_CANDIDATE_LOW_PERCENTILE,
-    candidate_high_percentile: float = DEFAULT_CANDIDATE_HIGH_PERCENTILE,
+    minimum_staffing_agents: int,
+    maximum_staffing_agents: int,
 ) -> list[int]:
-    """Build the sorted unique candidate staffing list from a required-agent distribution.
+    """Build the full feasible recommendation candidate range."""
 
-    The WBS calls for low/high candidate-range percentile bounds to come from configuration.
-    Because the current repo does not yet centralize those bounds in config, this helper uses
-    explicit parameters with documented defaults.
-    """
-
-    normalized_required_agents = _validate_required_agents(required_agents)
-    normalized_low, normalized_high = _validate_candidate_percentile_bounds(
-        candidate_low_percentile,
-        candidate_high_percentile,
+    normalized_minimum = validate_non_negative_integer(
+        "minimum_staffing_agents",
+        minimum_staffing_agents,
     )
-
-    low_staffing = _higher_quantile(normalized_required_agents, normalized_low)
-    high_staffing = _higher_quantile(normalized_required_agents, normalized_high)
-    candidate_values = set(range(low_staffing, high_staffing + 1))
-
-    if previous_week_staffing is not None:
-        candidate_values.add(
-            validate_non_negative_integer("previous_week_staffing", previous_week_staffing)
+    normalized_maximum = validate_non_negative_integer(
+        "maximum_staffing_agents",
+        maximum_staffing_agents,
+    )
+    if normalized_minimum > normalized_maximum:
+        raise FieldValidationError(
+            "minimum_staffing_agents must be less than or equal to maximum_staffing_agents"
         )
-    if manager_planned_staffing is not None:
-        candidate_values.add(
-            validate_non_negative_integer("manager_planned_staffing", manager_planned_staffing)
-        )
-
-    return sorted(candidate_values)
+    return list(range(normalized_minimum, normalized_maximum + 1))
 
 
 def select_named_plans(
@@ -199,8 +159,6 @@ def build_named_plan_table(
 
 
 __all__ = [
-    "DEFAULT_CANDIDATE_HIGH_PERCENTILE",
-    "DEFAULT_CANDIDATE_LOW_PERCENTILE",
     "build_candidate_staffing_list",
     "build_named_plan_table",
     "select_named_plans",

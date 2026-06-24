@@ -47,7 +47,6 @@ class FinanceTests(unittest.TestCase):
     def _build_strategic_assumptions(self) -> dict[str, float]:
         return {
             "third_party_commission_rate": 0.125,
-            "inhouse_capture_target": 0.5,
         }
 
     def test_category_financials_reconcile_booking_value_and_commission(self) -> None:

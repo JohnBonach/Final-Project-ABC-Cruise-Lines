@@ -36,6 +36,8 @@ SIMULATED_WORKLOAD_OUTPUT_COLUMNS = (
     "overflow_workload_hours",
 )
 
+OUTLOOK_QUANTILE_CONVENTION = "linear"
+
 
 def _validate_simulated_demand(simulated_demand: pd.DataFrame) -> pd.DataFrame:
     """Validate the sampled-demand table and return it in canonical order."""
@@ -161,6 +163,217 @@ def _higher_quantile(values: np.ndarray, percentile: float) -> int:
     index = max(math.ceil(percentile * ordered.size) - 1, 0)
     index = min(index, ordered.size - 1)
     return int(ordered[index])
+
+
+def _validate_outlook_requests(
+    outlook_requests: Sequence[tuple[str, float, str]],
+) -> tuple[tuple[str, float, str], ...]:
+    if not isinstance(outlook_requests, Sequence) or isinstance(
+        outlook_requests,
+        (str, bytes),
+    ):
+        raise FieldValidationError(
+            "outlook_requests must be a sequence of (outlook_name, percentile, percentile_label)"
+        )
+
+    normalized: list[tuple[str, float, str]] = []
+    for index, item in enumerate(outlook_requests):
+        if not isinstance(item, Sequence) or len(item) != 3:
+            raise FieldValidationError(
+                f"outlook_requests[{index}] must contain exactly three values"
+            )
+        outlook_name, percentile, percentile_label = item
+        if not isinstance(outlook_name, str) or not outlook_name.strip():
+            raise FieldValidationError(f"outlook_requests[{index}].outlook_name must be non-empty")
+        if not isinstance(percentile_label, str) or not percentile_label.strip():
+            raise FieldValidationError(
+                f"outlook_requests[{index}].percentile_label must be non-empty"
+            )
+        normalized.append(
+            (
+                outlook_name.strip(),
+                validate_percentage(
+                    f"outlook_requests[{index}].percentile",
+                    percentile,
+                ),
+                percentile_label.strip(),
+            )
+        )
+    if not normalized:
+        raise FieldValidationError("outlook_requests must contain at least one request")
+    return tuple(normalized)
+
+
+def _calculate_target_workload(
+    sorted_total_workload_hours: pd.Series,
+    percentile: float,
+) -> float:
+    return float(
+        sorted_total_workload_hours.quantile(
+            percentile,
+            interpolation=OUTLOOK_QUANTILE_CONVENTION,
+        )
+    )
+
+
+def _rank_representative_candidates(
+    ordered_completed_simulation: pd.DataFrame,
+    *,
+    target_total_workload_hours: float,
+    minimum_total_workload_hours: float,
+    used_row_ids: set[int],
+    allow_reuse: bool,
+) -> pd.DataFrame:
+    candidates = ordered_completed_simulation.loc[
+        ordered_completed_simulation["total_workload_hours"] >= minimum_total_workload_hours
+    ].copy()
+    if not allow_reuse:
+        candidates = candidates.loc[~candidates["simulation_id"].isin(used_row_ids)].copy()
+    if candidates.empty:
+        return candidates
+
+    candidates["distance_to_target"] = (
+        candidates["total_workload_hours"] - target_total_workload_hours
+    ).abs()
+    return candidates.sort_values(
+        by=["distance_to_target", "simulation_id"],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
+def select_representative_simulation_rows(
+    completed_simulation: pd.DataFrame,
+    outlook_requests: Sequence[tuple[str, float, str]] = (
+        ("Lower Demand", 0.25, "P25"),
+        ("Central Demand", 0.5, "P50"),
+        ("Higher Demand", 0.9, "P90"),
+    ),
+) -> dict[str, object]:
+    """Select deterministic representative simulation rows for requested workload percentiles."""
+
+    ordered_completed_simulation = _validate_completed_simulation(
+        completed_simulation
+    ).sort_values(
+        by=["total_workload_hours", "simulation_id"],
+        kind="stable",
+    ).reset_index(drop=True)
+    if ordered_completed_simulation.empty:
+        raise FieldValidationError("completed_simulation must contain at least one simulation row")
+
+    normalized_outlook_requests = _validate_outlook_requests(outlook_requests)
+    sorted_total_workload_hours = ordered_completed_simulation["total_workload_hours"].astype(float)
+
+    target_workload_by_label = {
+        percentile_label: _calculate_target_workload(
+            sorted_total_workload_hours,
+            percentile,
+        )
+        for _, percentile, percentile_label in normalized_outlook_requests
+    }
+
+    selected_rows: list[dict[str, object]] = []
+    used_row_ids: set[int] = set()
+    minimum_total_workload_hours = float("-inf")
+
+    for outlook_name, percentile, percentile_label in normalized_outlook_requests:
+        target_total_workload_hours = target_workload_by_label[percentile_label]
+        ranked_candidates = _rank_representative_candidates(
+            ordered_completed_simulation,
+            target_total_workload_hours=target_total_workload_hours,
+            minimum_total_workload_hours=minimum_total_workload_hours,
+            used_row_ids=used_row_ids,
+            allow_reuse=False,
+        )
+        if ranked_candidates.empty:
+            ranked_candidates = _rank_representative_candidates(
+                ordered_completed_simulation,
+                target_total_workload_hours=target_total_workload_hours,
+                minimum_total_workload_hours=minimum_total_workload_hours,
+                used_row_ids=used_row_ids,
+                allow_reuse=True,
+            )
+        if ranked_candidates.empty:
+            raise FieldValidationError(
+                "unable to select a representative simulation row for the requested outlooks"
+            )
+
+        selected_row = ranked_candidates.iloc[0]
+        simulation_row_id = int(selected_row["simulation_id"])
+        total_workload_hours = float(selected_row["total_workload_hours"])
+        used_row_ids.add(simulation_row_id)
+        minimum_total_workload_hours = total_workload_hours
+        selected_rows.append(
+            {
+                "outlook_name": outlook_name,
+                "percentile": percentile,
+                "percentile_label": percentile_label,
+                "simulation_row_id": simulation_row_id,
+                "target_total_workload_hours": target_total_workload_hours,
+                "selected_total_workload_hours": total_workload_hours,
+                "row": selected_row.loc[list(SIMULATED_WORKLOAD_OUTPUT_COLUMNS)].to_dict(),
+            }
+        )
+
+    selected_row_ids_by_label = {
+        item["percentile_label"]: int(item["simulation_row_id"])
+        for item in selected_rows
+    }
+    selected_workloads_by_label = {
+        item["percentile_label"]: float(item["selected_total_workload_hours"])
+        for item in selected_rows
+    }
+    selected_row_counts: dict[int, int] = {}
+    selected_outlooks_by_row_id: dict[int, list[str]] = {}
+    for item in selected_rows:
+        row_id = int(item["simulation_row_id"])
+        selected_row_counts[row_id] = selected_row_counts.get(row_id, 0) + 1
+        selected_outlooks_by_row_id.setdefault(row_id, []).append(str(item["outlook_name"]))
+
+    for item in selected_rows:
+        item["representative_row_reused"] = (
+            selected_row_counts[int(item["simulation_row_id"])] > 1
+        )
+
+    reuse_details = [
+        {
+            "simulation_row_id": row_id,
+            "outlooks": outlook_names,
+        }
+        for row_id, outlook_names in selected_outlooks_by_row_id.items()
+        if len(outlook_names) > 1
+    ]
+    selected_workloads_in_request_order = [
+        float(item["selected_total_workload_hours"])
+        for item in selected_rows
+    ]
+    ordering_invariant_satisfied = all(
+        earlier <= later
+        for earlier, later in zip(
+            selected_workloads_in_request_order,
+            selected_workloads_in_request_order[1:],
+        )
+    )
+
+    return {
+        "selected_rows": selected_rows,
+        "diagnostics": {
+            "quantile_convention": OUTLOOK_QUANTILE_CONVENTION,
+            "ordering_measure": "total_workload_hours",
+            "row_identity_field": "simulation_id",
+            "selected_row_ids_by_percentile_label": selected_row_ids_by_label,
+            "target_total_workload_hours_by_percentile_label": target_workload_by_label,
+            "selected_total_workload_hours_by_percentile_label": selected_workloads_by_label,
+            "row_reuse_detected": bool(reuse_details),
+            "reused_simulation_rows": reuse_details,
+            "reuse_reason": (
+                "Representative row reuse was required because too few completed simulation rows "
+                "were available after distinct-row preference was applied."
+                if reuse_details
+                else None
+            ),
+            "ordering_invariant_satisfied": ordering_invariant_satisfied,
+        },
+    }
 
 
 def calculate_simulated_workload_and_staffing(
@@ -298,7 +511,9 @@ def calculate_simulation_summary(
 
 
 __all__ = [
+    "OUTLOOK_QUANTILE_CONVENTION",
     "SIMULATED_WORKLOAD_OUTPUT_COLUMNS",
     "calculate_simulation_summary",
     "calculate_simulated_workload_and_staffing",
+    "select_representative_simulation_rows",
 ]

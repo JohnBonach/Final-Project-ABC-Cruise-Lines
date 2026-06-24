@@ -40,7 +40,16 @@ WORKFORCE_ASSUMPTION_FIELDS: Final[tuple[str, ...]] = (
 
 STRATEGIC_ASSUMPTION_FIELDS: Final[tuple[str, ...]] = (
     "third_party_commission_rate",
-    "inhouse_capture_target",
+)
+
+DECISION_POLICY_FIELDS: Final[tuple[str, ...]] = (
+    "minimum_inhouse_coverage_target",
+)
+
+STAFFING_FEASIBILITY_STATUSES: Final[tuple[str, str, str]] = (
+    "below_operating_floor",
+    "within_operating_range",
+    "above_inhouse_capacity",
 )
 
 FORECAST_RESULT_COLUMNS: Final[tuple[str, ...]] = (

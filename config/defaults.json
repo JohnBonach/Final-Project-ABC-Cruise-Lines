@@ -25,6 +25,9 @@
     "maximum_inhouse_agents": 12,
     "planned_staffing_agents": 10
   },
+  "decision_policy": {
+    "minimum_inhouse_coverage_target": 0.85
+  },
   "forecast_configuration": {
     "weights": [
       0.4,
@@ -47,7 +50,6 @@
     "conservative": 0.95
   },
   "strategic_assumptions": {
-    "third_party_commission_rate": 0.125,
-    "inhouse_capture_target": 0.5
+    "third_party_commission_rate": 0.125
   }
 }

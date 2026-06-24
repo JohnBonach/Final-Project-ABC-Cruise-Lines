@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import unittest
 from unittest import mock
 
@@ -13,6 +14,7 @@ from src.forecasting.weighted_moving_average import calculate_weighted_moving_av
 from src.models import (
     CategoryAssumptions,
     ConfidenceTargets,
+    DecisionPolicy,
     ForecastConfiguration,
     SimulationConfiguration,
     StrategicAssumptions,
@@ -29,8 +31,10 @@ from src.ui.charts import (
     build_history_display_frame_with_labels,
     build_methodology_points,
     build_overflow_detail_frame,
+    build_plan_comparison_frame,
     build_results_export_frames,
     build_secondary_kpi_frame,
+    build_staffing_risk_cost_frame,
     build_staffing_capacity_frame,
     build_workload_breakdown_frame,
 )
@@ -40,6 +44,7 @@ from src.ui.state import (
     confidence_targets_are_ordered,
     collect_draft_inputs_from_widgets,
     decimal_to_percent,
+    decision_policy_control_key,
     initialize_session_state,
     manual_override_enabled_key,
     manual_override_value_key,
@@ -184,9 +189,11 @@ class UICoordinateHelpersTests(unittest.TestCase):
                 maximum_inhouse_agents=12,
                 planned_staffing_agents=10,
             ),
+            "decision_policy": DecisionPolicy(
+                minimum_inhouse_coverage_target=0.85,
+            ),
             "strategic_assumptions": StrategicAssumptions(
                 third_party_commission_rate=0.125,
-                inhouse_capture_target=0.50,
             ),
             "forecast_configuration": ForecastConfiguration(
                 weights=(0.4, 0.3, 0.2, 0.1),
@@ -296,6 +303,7 @@ class UICoordinateHelpersTests(unittest.TestCase):
 
         state[manual_override_enabled_key("day_cruise")] = True
         state[manual_override_value_key("day_cruise")] = 99.0
+        state[decision_policy_control_key("minimum_inhouse_coverage_target")] = 0.95
         update_draft_inputs_from_widgets(state)
         run_analysis_for_current_draft(state, history=history, defaults=defaults)
 
@@ -306,41 +314,53 @@ class UICoordinateHelpersTests(unittest.TestCase):
             state["applied_inputs"]["manual_overrides"]["day_cruise"],
             {"enabled": True, "value": 99.0},
         )
+        self.assertEqual(
+            state["applied_inputs"]["decision_policy"]["minimum_inhouse_coverage_target"],
+            0.95,
+        )
         day_forecast = state["analysis_result"]["forecast_result"].loc[
             lambda frame: frame["category"] == "day_cruise",
             "point_forecast",
         ].iloc[0]
         self.assertEqual(float(day_forecast), 99.0)
 
-    def test_scenario_change_marks_results_stale(self) -> None:
+    def test_manager_proposal_change_marks_results_stale_without_changing_coverage_target(self) -> None:
         state, _, _ = self._build_initialized_state()
 
-        state["scenario_label"] = "High Demand"
-        state[manual_override_enabled_key("day_cruise")] = False
-        state[manual_override_value_key("day_cruise")] = 0.0
+        original_target = state["applied_inputs"]["decision_policy"][
+            "minimum_inhouse_coverage_target"
+        ]
+        state[workforce_control_key("planned_staffing_agents")] = 6
         update_draft_inputs_from_widgets(state)
 
         self.assertTrue(state["results_stale"])
         self.assertEqual(
-            state["draft_inputs"]["shell"]["scenario_label"],
-            "High Demand",
+            state["draft_inputs"]["workforce_assumptions"]["planned_staffing_agents"],
+            6,
+        )
+        self.assertEqual(
+            state["applied_inputs"]["decision_policy"]["minimum_inhouse_coverage_target"],
+            original_target,
         )
 
     def test_reset_restores_baseline_inputs_and_a_clean_result(self) -> None:
         state, history, defaults = self._build_initialized_state()
 
-        state["scenario_label"] = "High Demand"
         state[manual_override_enabled_key("day_cruise")] = True
         state[manual_override_value_key("day_cruise")] = 99.0
+        state[decision_policy_control_key("minimum_inhouse_coverage_target")] = 0.95
         update_draft_inputs_from_widgets(state)
         reset_session_state(state, history=history, defaults=defaults)
 
-        self.assertEqual(state["scenario_label"], "Expected Demand")
         self.assertFalse(state["results_stale"])
         self.assertEqual(state["draft_inputs"], state["baseline_inputs"])
         self.assertEqual(state["applied_inputs"], state["baseline_inputs"])
         self.assertIsNone(state["analysis_error"])
         self.assertTrue(state["analysis_result"]["ok"])
+        self.assertEqual(
+            state["applied_inputs"]["decision_policy"]["minimum_inhouse_coverage_target"],
+            0.85,
+        )
 
     def test_methodology_points_cover_the_staffing_pipeline(self) -> None:
         points = build_methodology_points()
@@ -375,9 +395,34 @@ class UICoordinateHelpersTests(unittest.TestCase):
             draft["strategic_assumptions"]["third_party_commission_rate"],
             0.125,
         )
+
+    def test_decision_policy_in_draft_payload(self) -> None:
+        state, _, _ = self._build_initialized_state()
+
+        draft = state["draft_inputs"]
+        self.assertIn("decision_policy", draft)
         self.assertAlmostEqual(
-            draft["strategic_assumptions"]["inhouse_capture_target"],
-            0.50,
+            draft["decision_policy"]["minimum_inhouse_coverage_target"],
+            0.85,
+        )
+
+    def test_decision_policy_change_marks_results_stale_without_changing_manager_staffing(self) -> None:
+        state, _, _ = self._build_initialized_state()
+        original_manager_staffing = state["applied_inputs"]["workforce_assumptions"][
+            "planned_staffing_agents"
+        ]
+
+        state[decision_policy_control_key("minimum_inhouse_coverage_target")] = 0.95
+        update_draft_inputs_from_widgets(state)
+
+        self.assertTrue(state["results_stale"])
+        self.assertEqual(
+            state["draft_inputs"]["decision_policy"]["minimum_inhouse_coverage_target"],
+            0.95,
+        )
+        self.assertEqual(
+            state["applied_inputs"]["workforce_assumptions"]["planned_staffing_agents"],
+            original_manager_staffing,
         )
 
     def test_no_obsolete_fields_in_collected_draft(self) -> None:
@@ -628,17 +673,94 @@ class UINewChartHelperTests(unittest.TestCase):
     def test_forecast_breakdown_frame_shows_all_layers(self) -> None:
         fb = build_forecast_breakdown_frame(
             automatic_forecast={"day_cruise": 235.0, "seven_night_cruise": 153.5, "nine_night_cruise": 90.0},
-            scenario_adjusted_forecast={"day_cruise": 235.0, "seven_night_cruise": 153.5, "nine_night_cruise": 90.0},
             effective_forecast={"day_cruise": 235.0, "seven_night_cruise": 153.5, "nine_night_cruise": 90.0},
             manual_overrides=None,
-            scenario_name="Expected Demand",
         )
 
         self.assertEqual(len(fb), 3)
-        self.assertIn("automatic_forecast", fb.columns)
-        self.assertIn("scenario_adjusted", fb.columns)
-        self.assertIn("effective_forecast", fb.columns)
+        self.assertIn("central_forecast", fb.columns)
+        self.assertIn("use_manager_forecast", fb.columns)
+        self.assertIn("manager_forecast", fb.columns)
+        self.assertIn("applied_forecast", fb.columns)
         self.assertIn("forecast_source", fb.columns)
+
+    def test_plan_comparison_frame_uses_backend_record_values(self) -> None:
+        frame = build_plan_comparison_frame(
+            {
+                "staffing_agents": 12,
+                "feasibility_status": "within_operating_range",
+                "capacity_confidence": 0.881,
+                "probability_overflow_required": 0.119,
+                "regular_labor_cost": 10560.0,
+                "expected_overflow_workload_hours": 1.4,
+                "expected_overflow_commission": 691.36,
+                "expected_spare_capacity_hours": 0.7,
+                "expected_total_weekly_operating_cost": 11251.36,
+            },
+            {
+                "staffing_agents": 6,
+                "feasibility_status": "below_operating_floor",
+                "capacity_confidence": 0.20,
+                "probability_overflow_required": 0.80,
+                "regular_labor_cost": 5280.0,
+                "expected_overflow_workload_hours": 40.0,
+                "expected_overflow_commission": 9000.0,
+                "expected_spare_capacity_hours": 0.0,
+                "expected_total_weekly_operating_cost": 14280.0,
+            },
+        )
+
+        self.assertEqual(frame["plan"].tolist(), ["Model Recommendation", "Manager Proposal"])
+        self.assertEqual(frame.loc[1, "feasibility_status"], "below_operating_floor")
+        self.assertAlmostEqual(frame.loc[0, "expected_total_weekly_operating_cost"], 11251.36)
+
+    def test_staffing_risk_cost_frame_marks_recommendation_manager_and_previous_week(self) -> None:
+        frame = build_staffing_risk_cost_frame(
+            [
+                {
+                    "staffing_agents": 8,
+                    "feasibility_status": "within_operating_range",
+                    "capacity_confidence": 0.5,
+                    "probability_overflow_required": 0.5,
+                    "expected_spare_capacity_hours": 5.0,
+                    "expected_overflow_workload_hours": 5.0,
+                    "expected_overflow_bookings_by_category": {
+                        "day_cruise": 1.0,
+                        "seven_night_cruise": 2.0,
+                        "nine_night_cruise": 3.0,
+                    },
+                    "regular_labor_cost": 7040.0,
+                    "expected_overflow_commission": 100.0,
+                    "expected_total_weekly_operating_cost": 7140.0,
+                    "is_model_recommendation": False,
+                    "is_manager_proposal": True,
+                    "is_previous_week": False,
+                },
+                {
+                    "staffing_agents": 12,
+                    "feasibility_status": "within_operating_range",
+                    "capacity_confidence": 0.88,
+                    "probability_overflow_required": 0.12,
+                    "expected_spare_capacity_hours": 0.7,
+                    "expected_overflow_workload_hours": 1.4,
+                    "expected_overflow_bookings_by_category": {
+                        "day_cruise": 0.1,
+                        "seven_night_cruise": 0.2,
+                        "nine_night_cruise": 0.3,
+                    },
+                    "regular_labor_cost": 10560.0,
+                    "expected_overflow_commission": 691.36,
+                    "expected_total_weekly_operating_cost": 11251.36,
+                    "is_model_recommendation": True,
+                    "is_manager_proposal": False,
+                    "is_previous_week": True,
+                },
+            ]
+        )
+
+        self.assertEqual(frame.loc[0, "markers"], "Manager Proposal")
+        self.assertEqual(frame.loc[1, "markers"], "Recommendation, Previous Week")
+        self.assertAlmostEqual(frame.loc[0, "expected_overflow_bookings"], 6.0)
 
     def test_staffing_capacity_frame_shows_steps(self) -> None:
         sc = build_staffing_capacity_frame(
@@ -685,6 +807,147 @@ class UINewChartHelperTests(unittest.TestCase):
         od = build_overflow_detail_frame(self._build_deterministic_result())
         self.assertEqual(od["overflow_bookings"].sum(), 0.0)
 
+    def test_results_export_frames_include_probabilistic_outlooks(self) -> None:
+        application_result = {
+            "forecast_result": pd.DataFrame([{"category": "day_cruise"}]),
+            "staffing_evaluation_table": pd.DataFrame([{"staffing_agents": 8}]),
+            "named_plans": {"table": pd.DataFrame([{"plan_name": "Lean"}])},
+            "narrative": {"comparison_table": pd.DataFrame([{"plan_name": "Manager Plan"}])},
+            "recommendation_policy": {
+                "minimum_inhouse_coverage_target": 0.85,
+            },
+            "recommended_plan": {
+                "staffing_agents": 11,
+                "feasibility_status": "within_operating_range",
+                "capacity_confidence": 0.89,
+                "probability_overflow_required": 0.11,
+                "regular_labor_cost": 9680.0,
+                "expected_overflow_workload_hours": 0.0,
+                "expected_overflow_commission": 0.0,
+                "expected_spare_capacity_hours": 7.5,
+                "expected_total_weekly_operating_cost": 9680.0,
+            },
+            "manager_proposal": {
+                "staffing_agents": 10,
+                "feasibility_status": "within_operating_range",
+                "capacity_confidence": 0.80,
+                "probability_overflow_required": 0.20,
+                "regular_labor_cost": 8800.0,
+                "expected_overflow_workload_hours": 2.0,
+                "expected_overflow_commission": 100.0,
+                "expected_spare_capacity_hours": 2.0,
+                "expected_total_weekly_operating_cost": 8900.0,
+            },
+            "recommendation_manager_comparison": {
+                "staffing_difference": -1,
+            },
+            "adaptive_comparison_narrative": {
+                "text": "manager narrative",
+                "warnings": [],
+                "difference_direction": "manager_value_minus_recommendation_value",
+            },
+            "previous_week_staffing_context": {
+                "staffing_agents": 9,
+                "feasibility_status": "within_operating_range",
+            },
+            "staffing_risk_cost_records": [],
+            "outlook_diagnostics": {
+                "ordering_invariant_satisfied": True,
+            },
+            "lower_demand_outlook": {
+                "outlook_name": "Lower Demand",
+                "percentile": 0.25,
+                "percentile_label": "P25",
+                "simulation_row_id": 1,
+                "representative_row_reused": False,
+                "demand_by_category": {"day_cruise": 1.0, "seven_night_cruise": 1.0, "nine_night_cruise": 1.0},
+                "total_bookings": 3.0,
+                "workload_hours_by_category": {"day_cruise": 1.0, "seven_night_cruise": 1.0, "nine_night_cruise": 1.0},
+                "total_workload_hours": 3.0,
+                "raw_required_fte": 1.0,
+                "unconstrained_required_agents": 1,
+                "recommended_inhouse_agents_for_outlook": 8,
+                "spare_capacity_hours": 7.0,
+                "overflow_workload_hours": 0.0,
+                "overflow_bookings_by_category": {"day_cruise": 0.0, "seven_night_cruise": 0.0, "nine_night_cruise": 0.0},
+                "regular_labor_cost": 100.0,
+                "overflow_commission": 0.0,
+                "total_weekly_operating_cost": 100.0,
+            },
+            "central_demand_outlook": {
+                "outlook_name": "Central Demand",
+                "percentile": 0.5,
+                "percentile_label": "P50",
+                "simulation_row_id": 2,
+                "representative_row_reused": False,
+                "demand_by_category": {"day_cruise": 2.0, "seven_night_cruise": 2.0, "nine_night_cruise": 2.0},
+                "total_bookings": 6.0,
+                "workload_hours_by_category": {"day_cruise": 2.0, "seven_night_cruise": 2.0, "nine_night_cruise": 2.0},
+                "total_workload_hours": 6.0,
+                "raw_required_fte": 1.0,
+                "unconstrained_required_agents": 1,
+                "recommended_inhouse_agents_for_outlook": 8,
+                "spare_capacity_hours": 4.0,
+                "overflow_workload_hours": 0.0,
+                "overflow_bookings_by_category": {"day_cruise": 0.0, "seven_night_cruise": 0.0, "nine_night_cruise": 0.0},
+                "regular_labor_cost": 100.0,
+                "overflow_commission": 0.0,
+                "total_weekly_operating_cost": 100.0,
+            },
+            "higher_demand_outlook": {
+                "outlook_name": "Higher Demand",
+                "percentile": 0.9,
+                "percentile_label": "P90",
+                "simulation_row_id": 3,
+                "representative_row_reused": False,
+                "demand_by_category": {"day_cruise": 3.0, "seven_night_cruise": 3.0, "nine_night_cruise": 3.0},
+                "total_bookings": 9.0,
+                "workload_hours_by_category": {"day_cruise": 3.0, "seven_night_cruise": 3.0, "nine_night_cruise": 3.0},
+                "total_workload_hours": 9.0,
+                "raw_required_fte": 1.0,
+                "unconstrained_required_agents": 1,
+                "recommended_inhouse_agents_for_outlook": 8,
+                "spare_capacity_hours": 1.0,
+                "overflow_workload_hours": 0.0,
+                "overflow_bookings_by_category": {"day_cruise": 0.0, "seven_night_cruise": 0.0, "nine_night_cruise": 0.0},
+                "regular_labor_cost": 100.0,
+                "overflow_commission": 0.0,
+                "total_weekly_operating_cost": 100.0,
+            },
+        }
+
+        export_frames = build_results_export_frames(
+            application_result,
+            pd.DataFrame(),
+            pd.DataFrame(),
+            applied_inputs={
+                "decision_policy": {"minimum_inhouse_coverage_target": 0.85},
+                "workforce_assumptions": {"planned_staffing_agents": 10},
+                "manual_overrides": {
+                    "day_cruise": {"enabled": False, "value": 235.0},
+                    "seven_night_cruise": {"enabled": False, "value": 153.5},
+                    "nine_night_cruise": {"enabled": False, "value": 90.0},
+                },
+                "category_assumptions": [],
+                "strategic_assumptions": {"third_party_commission_rate": 0.125},
+            },
+        )
+
+        self.assertIn("probabilistic_outlooks", export_frames)
+        self.assertIn("recommendation_policy", export_frames)
+        self.assertIn("recommended_plan", export_frames)
+        self.assertIn("manager_proposal", export_frames)
+        self.assertIn("applied_business_decisions", export_frames)
+        self.assertEqual(len(export_frames["probabilistic_outlooks"]), 3)
+        self.assertEqual(
+            export_frames["probabilistic_outlooks"]["percentile_label"].tolist(),
+            ["P25", "P50", "P90"],
+        )
+        self.assertNotIn(
+            "scenario_name",
+            export_frames["applied_business_decisions"].columns,
+        )
+
 
 class UIDashboardStructureTests(unittest.TestCase):
     """Verify the new single-page dashboard structure does not contain old controls."""
@@ -727,6 +990,19 @@ class UIDashboardStructureTests(unittest.TestCase):
         import app
 
         self.assertTrue(hasattr(app, "main"))
+
+    def test_business_decisions_controls_present_and_scenario_selector_absent(self) -> None:
+        from src.ui import components as comp
+
+        source = inspect.getsource(comp)
+        self.assertIn("Business Decisions", source)
+        self.assertIn("Minimum In-House Coverage Target (%)", source)
+        self.assertIn("Manager Proposed Staffing", source)
+        self.assertIn("Use manager forecast", source)
+        self.assertIn("Run Analysis", source)
+        self.assertIn("Reset to Baseline", source)
+        self.assertNotIn("Demand scenario", source)
+        self.assertNotIn("inhouse_capture_target", source)
 
 
 if __name__ == "__main__":

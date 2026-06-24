@@ -14,11 +14,9 @@ import pandas as pd
 from src.constants import RESERVATION_CATEGORIES
 from src.forecasting.weighted_moving_average import calculate_weighted_moving_average
 from src.orchestration import build_application_result
-from src.validation import EXPECTED_SCENARIO_NAMES
 
 DEFAULT_SESSION_STATE: dict[str, Any] = {
     "shell_initialized": False,
-    "scenario_label": EXPECTED_SCENARIO_NAMES[1],
     "draft_inputs": None,
     "applied_inputs": None,
     "baseline_inputs": None,
@@ -84,6 +82,11 @@ def strategic_control_key(field_name: str) -> str:
     return f"strategic_{field_name}"
 
 
+def decision_policy_control_key(field_name: str) -> str:
+    """Return the widget key for a decision-policy control."""
+    return f"decision_policy_{field_name}"
+
+
 def build_manual_overrides_from_state(session_state: Mapping[str, Any]) -> dict[str, float]:
     """Collect enabled manual overrides and validate their numeric values."""
     overrides: dict[str, float] = {}
@@ -113,9 +116,6 @@ def build_baseline_inputs(
     )
 
     return {
-        "shell": {
-            "scenario_label": DEFAULT_SESSION_STATE["scenario_label"],
-        },
         "manual_overrides": {
             category: {
                 "enabled": False,
@@ -128,6 +128,7 @@ def build_baseline_inputs(
             for item in defaults["category_assumptions"]
         ],
         "workforce_assumptions": defaults["workforce_assumptions"].to_dict(),
+        "decision_policy": defaults["decision_policy"].to_dict(),
         "strategic_assumptions": defaults["strategic_assumptions"].to_dict(),
         "simulation_settings": {
             "iterations": int(defaults["simulation_configuration"].iterations),
@@ -173,6 +174,7 @@ def build_application_result_from_inputs(
             dict(item) for item in input_payload["category_assumptions"]
         ),
         workforce_assumptions=dict(input_payload["workforce_assumptions"]),
+        decision_policy=dict(input_payload["decision_policy"]),
         strategic_assumptions=dict(input_payload["strategic_assumptions"]),
         forecast_configuration=defaults["forecast_configuration"],
         simulation_configuration=simulation_configuration,
@@ -182,7 +184,6 @@ def build_application_result_from_inputs(
             input_payload["workforce_assumptions"]["planned_staffing_agents"]
         ),
         manual_overrides=manual_overrides or None,
-        scenario_name=str(input_payload["shell"]["scenario_label"]),
     )
 
 
@@ -200,9 +201,6 @@ def sync_widgets_from_draft(session_state: MutableMapping[str, Any]) -> None:
     draft_inputs = session_state.get("draft_inputs")
     if not isinstance(draft_inputs, Mapping):
         return
-
-    shell = draft_inputs["shell"]
-    session_state["scenario_label"] = shell["scenario_label"]
 
     for category in RESERVATION_CATEGORIES:
         manual_override = draft_inputs["manual_overrides"][category]
@@ -238,12 +236,14 @@ def sync_widgets_from_draft(session_state: MutableMapping[str, Any]) -> None:
         workforce["planned_staffing_agents"]
     )
 
+    decision_policy = draft_inputs["decision_policy"]
+    session_state[
+        decision_policy_control_key("minimum_inhouse_coverage_target")
+    ] = float(decision_policy["minimum_inhouse_coverage_target"])
+
     strategic = draft_inputs["strategic_assumptions"]
     session_state[strategic_control_key("third_party_commission_rate")] = float(
         strategic["third_party_commission_rate"]
-    )
-    session_state[strategic_control_key("inhouse_capture_target")] = float(
-        strategic["inhouse_capture_target"]
     )
 
     simulation_settings = draft_inputs["simulation_settings"]
@@ -273,9 +273,6 @@ def collect_draft_inputs_from_widgets(
     manual_overrides = build_manual_overrides_from_state(session_state)
 
     return {
-        "shell": {
-            "scenario_label": str(session_state["scenario_label"]),
-        },
         "manual_overrides": {
             category: {
                 "enabled": bool(
@@ -322,12 +319,16 @@ def collect_draft_inputs_from_widgets(
                 session_state[workforce_control_key("planned_staffing_agents")]
             ),
         },
+        "decision_policy": {
+            "minimum_inhouse_coverage_target": float(
+                session_state[
+                    decision_policy_control_key("minimum_inhouse_coverage_target")
+                ]
+            ),
+        },
         "strategic_assumptions": {
             "third_party_commission_rate": float(
                 session_state[strategic_control_key("third_party_commission_rate")]
-            ),
-            "inhouse_capture_target": float(
-                session_state[strategic_control_key("inhouse_capture_target")]
             ),
         },
         "simulation_settings": {
@@ -391,10 +392,6 @@ def initialize_session_state(
     for key, value in DEFAULT_SESSION_STATE.items():
         session_state.setdefault(key, deepcopy(value))
 
-    session_state.setdefault("scenario_label", DEFAULT_SESSION_STATE["scenario_label"])
-    if session_state["scenario_label"] not in EXPECTED_SCENARIO_NAMES:
-        session_state["scenario_label"] = DEFAULT_SESSION_STATE["scenario_label"]
-
     if not session_state.get("shell_initialized", False):
         baseline_inputs = build_baseline_inputs(defaults, history)
         baseline_result = build_application_result_from_inputs(
@@ -431,7 +428,6 @@ def reset_session_state(
         defaults=defaults,
     )
 
-    session_state["scenario_label"] = DEFAULT_SESSION_STATE["scenario_label"]
     session_state["baseline_inputs"] = deepcopy(baseline_inputs)
     session_state["draft_inputs"] = deepcopy(baseline_inputs)
     session_state["applied_inputs"] = deepcopy(baseline_inputs)

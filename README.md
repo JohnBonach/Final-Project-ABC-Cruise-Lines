@@ -50,7 +50,7 @@ python -m unittest tests.test_ui_bundle tests.test_end_to_end tests.test_decisio
 - `app.py`: Streamlit entry point.
 - `src/`: Core forecasting, simulation, finance, decision, operations, data, validation, and UI modules.
 - `scripts/`: Command-line helpers for synthetic data generation, deterministic validation, and case-study runs.
-- `config/`: Default assumptions and scenario configuration.
+- `config/`: Default assumptions and simulation configuration.
 - `data/`: Synthetic history and saved validation/case-study artifacts.
 - `tests/`: Unit, integration, and regression coverage.
 - `requirements.txt`: Third-party Python dependencies.
@@ -58,17 +58,17 @@ python -m unittest tests.test_ui_bundle tests.test_end_to_end tests.test_decisio
 ## Main Assumptions
 
 - The planning horizon is one week.
-- Demand is modeled for four canonical reservation categories: `simple`, `standard`, `complex_group`, and `change_cancellation`.
+- Demand is modeled for three canonical reservation categories: `day_cruise`, `seven_night_cruise`, and `nine_night_cruise`.
 - Historical data is synthetic and reproducible rather than pulled from a live reservation system.
 - Staffing is evaluated in whole agents, with FTE shown as an analytical aid.
-- Regular labor, overtime, and abandonment are all part of the staffing tradeoff.
-- Forecasts and simulations are controllable through the configuration files and Streamlit inputs.
+- The recommendation objective is total weekly operating cost:
+  regular labor cost plus expected third-party overflow commission.
+- Managers can set a minimum in-house coverage target, evaluate an exact manager staffing proposal, and optionally apply manual category forecast overrides before rerunning the analysis.
 
 ## Known Limitations
 
 - The prototype does not do hourly scheduling or shift rostering.
 - It does not model customer waiting-time behavior directly.
-- It uses a simplified global abandonment rate.
 - It does not integrate with a real reservation system or live operational data.
 - It does not optimize recruitment, training, or part-time staffing.
 - It is designed for weekly tactical staffing, not full workforce management.
@@ -83,4 +83,4 @@ python -m unittest tests.test_ui_bundle tests.test_end_to_end tests.test_decisio
 ## Useful Scripts
 
 - `python scripts/run_validation_case.py` runs the deterministic validation case used for hand-checkable math.
-- `python scripts/run_case_study.py` runs the probabilistic case study and writes a JSON report.
+- `python scripts/run_case_study.py` runs the probabilistic case study using the current coverage-target recommendation policy and writes a JSON report.

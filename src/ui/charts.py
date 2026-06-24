@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -391,37 +392,38 @@ def build_financial_breakdown_frame(
 
 def build_forecast_breakdown_frame(
     automatic_forecast: Mapping[str, float],
-    scenario_adjusted_forecast: Mapping[str, float],
     effective_forecast: Mapping[str, float],
     manual_overrides: Mapping[str, float] | None,
-    scenario_name: str,
 ) -> pd.DataFrame:
-    """Build forecast breakdown showing all layers."""
+    """Build forecast breakdown showing automatic, manager, and applied values."""
     manual_overrides = manual_overrides or {}
     rows = []
     for category in RESERVATION_CATEGORIES:
         auto = float(automatic_forecast[category])
-        adj = float(scenario_adjusted_forecast[category])
         eff = float(effective_forecast[category])
         is_manual = category in manual_overrides
         rows.append(
             {
                 "cruise_product": CATEGORY_DISPLAY_LABELS[category],
-                "automatic_forecast": round(auto, 1),
-                "scenario_adjusted": round(adj, 1),
-                "manual_override": float(manual_overrides[category]) if is_manual else None,
-                "effective_forecast": round(eff, 1),
-                "forecast_source": "manual_override" if is_manual else f"automatic ({scenario_name})",
+                "central_forecast": round(auto, 1),
+                "use_manager_forecast": is_manual,
+                "manager_forecast": (
+                    float(manual_overrides[category])
+                    if is_manual
+                    else None
+                ),
+                "applied_forecast": round(eff, 1),
+                "forecast_source": "manager_override" if is_manual else "automatic",
             }
         )
     return pd.DataFrame(
         rows,
         columns=(
             "cruise_product",
-            "automatic_forecast",
-            "scenario_adjusted",
-            "manual_override",
-            "effective_forecast",
+            "central_forecast",
+            "use_manager_forecast",
+            "manager_forecast",
+            "applied_forecast",
             "forecast_source",
         ),
     )
@@ -452,34 +454,193 @@ def build_overflow_detail_frame(
     )
 
 
+def build_plan_comparison_frame(
+    recommended_plan: Mapping[str, Any],
+    manager_proposal: Mapping[str, Any],
+) -> pd.DataFrame:
+    """Build the visible recommendation-versus-manager comparison table."""
+    rows = []
+    for plan_name, plan in (
+        ("Model Recommendation", recommended_plan),
+        ("Manager Proposal", manager_proposal),
+    ):
+        rows.append(
+            {
+                "plan": plan_name,
+                "staffing_agents": int(plan["staffing_agents"]),
+                "feasibility_status": str(plan["feasibility_status"]),
+                "inhouse_coverage_probability": float(plan["capacity_confidence"]),
+                "probability_overflow_required": float(plan["probability_overflow_required"]),
+                "regular_labor_cost": float(plan["regular_labor_cost"]),
+                "expected_overflow_workload_hours": float(
+                    plan["expected_overflow_workload_hours"]
+                ),
+                "expected_overflow_commission": float(
+                    plan["expected_overflow_commission"]
+                ),
+                "expected_spare_capacity_hours": float(
+                    plan["expected_spare_capacity_hours"]
+                ),
+                "expected_total_weekly_operating_cost": float(
+                    plan["expected_total_weekly_operating_cost"]
+                ),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def build_staffing_risk_cost_frame(
+    staffing_risk_cost_records: Sequence[Mapping[str, Any]],
+) -> pd.DataFrame:
+    """Build the lower-page staffing risk-cost table from backend records."""
+    rows: list[dict[str, Any]] = []
+    for record in staffing_risk_cost_records:
+        markers: list[str] = []
+        if bool(record["is_model_recommendation"]):
+            markers.append("Recommendation")
+        if bool(record["is_manager_proposal"]):
+            markers.append("Manager Proposal")
+        if bool(record["is_previous_week"]):
+            markers.append("Previous Week")
+        overflow_bookings = record["expected_overflow_bookings_by_category"]
+        rows.append(
+            {
+                "staffing_agents": int(record["staffing_agents"]),
+                "markers": ", ".join(markers),
+                "feasibility_status": str(record["feasibility_status"]),
+                "inhouse_coverage_probability": float(record["capacity_confidence"]),
+                "probability_overflow_required": float(
+                    record["probability_overflow_required"]
+                ),
+                "expected_spare_capacity_hours": float(
+                    record["expected_spare_capacity_hours"]
+                ),
+                "expected_overflow_workload_hours": float(
+                    record["expected_overflow_workload_hours"]
+                ),
+                "expected_overflow_bookings": float(sum(overflow_bookings.values())),
+                "regular_labor_cost": float(record["regular_labor_cost"]),
+                "expected_overflow_commission": float(
+                    record["expected_overflow_commission"]
+                ),
+                "expected_total_weekly_operating_cost": float(
+                    record["expected_total_weekly_operating_cost"]
+                ),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def _serialize_export_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return json.dumps(value, sort_keys=True)
+    if isinstance(value, list):
+        return json.dumps(value)
+    return value
+
+
+def _single_row_frame(payload: Mapping[str, Any]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [{key: _serialize_export_value(value) for key, value in payload.items()}]
+    )
+
+
 def build_results_export_frames(
     application_result: Mapping[str, Any],
-    recommendation_summary: pd.DataFrame,
-    comparison_frame: pd.DataFrame,
+    recommendation_summary: pd.DataFrame | None = None,
+    comparison_frame: pd.DataFrame | None = None,
+    applied_inputs: Mapping[str, Any] | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """Collect the most useful structured outputs for CSV export."""
+    """Collect structured outputs for manager export surfaces."""
     named_plans = application_result["named_plans"]
     narrative = application_result["narrative"]
-    return {
+    comparison_frame = (
+        comparison_frame
+        if comparison_frame is not None and not comparison_frame.empty
+        else build_plan_comparison_frame(
+            application_result["recommended_plan"],
+            application_result["manager_proposal"],
+        )
+    )
+    recommendation_summary = (
+        recommendation_summary
+        if recommendation_summary is not None and not recommendation_summary.empty
+        else _single_row_frame(application_result["recommended_plan"])
+    )
+    outlook_rows = [
+        application_result["lower_demand_outlook"],
+        application_result["central_demand_outlook"],
+        application_result["higher_demand_outlook"],
+    ]
+    export_frames = {
         "forecast_result": application_result["forecast_result"].copy(),
         "staffing_evaluation_table": application_result["staffing_evaluation_table"].copy(),
         "named_plan_table": named_plans["table"].copy(),
         "comparison_table": narrative["comparison_table"].copy(),
         "plan_comparison_display": comparison_frame.copy(),
+        "recommendation_policy": _single_row_frame(application_result["recommendation_policy"]),
+        "recommended_plan": _single_row_frame(application_result["recommended_plan"]),
+        "manager_proposal": _single_row_frame(application_result["manager_proposal"]),
+        "recommendation_manager_comparison": _single_row_frame(
+            application_result["recommendation_manager_comparison"]
+        ),
+        "adaptive_comparison_narrative": _single_row_frame(
+            application_result["adaptive_comparison_narrative"]
+        ),
+        "previous_week_staffing_context": _single_row_frame(
+            application_result["previous_week_staffing_context"]
+        ),
+        "staffing_risk_cost_records": pd.DataFrame(
+            [
+                {
+                    key: _serialize_export_value(value)
+                    for key, value in record.items()
+                }
+                for record in application_result["staffing_risk_cost_records"]
+            ]
+        ),
         "recommendation_summary": recommendation_summary.copy(),
+        "probabilistic_outlooks": pd.DataFrame(outlook_rows),
+        "outlook_diagnostics": _single_row_frame(application_result["outlook_diagnostics"]),
     }
+    if applied_inputs is not None:
+        export_frames["applied_business_decisions"] = _single_row_frame(
+            {
+                "minimum_inhouse_coverage_target": applied_inputs["decision_policy"][
+                    "minimum_inhouse_coverage_target"
+                ],
+                "manager_proposed_staffing": applied_inputs["workforce_assumptions"][
+                    "planned_staffing_agents"
+                ],
+                "manual_overrides": applied_inputs["manual_overrides"],
+            }
+        )
+        export_frames["applied_category_assumptions"] = pd.DataFrame(
+            applied_inputs["category_assumptions"]
+        )
+        export_frames["applied_workforce_assumptions"] = _single_row_frame(
+            applied_inputs["workforce_assumptions"]
+        )
+        export_frames["applied_strategic_assumptions"] = _single_row_frame(
+            applied_inputs["strategic_assumptions"]
+        )
+
+    return export_frames
 
 
 def build_methodology_points() -> tuple[str, ...]:
     """Return manager-friendly summary points for the recommendation flow."""
     return (
-        "Validate the shared history and scenario inputs before any staffing calculation begins.",
-        "Build the weekly demand forecast from recent four-week weighted moving average history, "
-        "then apply scenario multipliers for Low, Expected, or High demand.",
-        "Convert forecast demand into weekly workload using category handling times and "
-        "weekly booking-processing hours per agent.",
-        "Apply the operating floor (minimum schedulable agents) and in-house cap "
-        "(maximum in-house agents) to determine recommended staffing.",
-        "Calculate spare capacity or third-party overflow based on in-house capacity vs. demand.",
-        "Compute in-house labor cost, overflow commission, and total weekly operating cost.",
+        "Build the weekly central forecast from recent four-week weighted moving average history, "
+        "then apply any enabled manual category overrides before simulation.",
+        "Run Monte Carlo demand simulation and evaluate every feasible in-house staffing level "
+        "from the operating floor through the in-house capacity cap.",
+        "Recommend the lowest-total-cost feasible staffing level that meets the selected "
+        "minimum in-house coverage target, with a documented fallback when the target is unachievable.",
+        "Evaluate the manager proposal exactly as entered, including below-floor and above-cap what-if plans.",
+        "Select Lower Demand (P25), Central Demand (P50), and Higher Demand (P90) planning outlooks "
+        "from coherent representative simulation rows ordered by total workload.",
+        "Compute total weekly operating cost as regular labor cost plus expected third-party overflow commission.",
     )

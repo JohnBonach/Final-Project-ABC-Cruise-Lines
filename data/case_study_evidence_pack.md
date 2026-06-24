@@ -14,28 +14,26 @@ Source artifacts:
 ### Manual validation case
 - Case name: `uniform_four_week_hand_check`
 - Result: `PASS`
-- Deterministic forecast: simple 12, standard 8, complex_group 4, change_cancellation 6
+- Deterministic forecast: retained as the earlier hand-check artifact for foundational math verification
 - Deterministic workload: 40.0 hours total
-- Productive hours per agent: 30.0
+- Booking-processing hours per agent: 30.0
 - Required FTE: 1.3333333333333333
 - Required agents: 2
 - Staffing test point: 1 agent
-- Expected total economic cost: 1325.0
+- Total weekly operating cost: 1325.0
 
 ### Probabilistic case study
 - Case name: `four_week_handling_time_sensitivity_case`
 - Result: `PASS`
-- Baseline recommendation: 9 agents
-- Baseline capacity confidence: 0.3814
-- Baseline expected overtime: 9.253155 hours
-- Baseline expected abandoned reservations: 2.4915411284566726
-- Baseline expected total economic cost: 8736.44373109719
-- Sensitivity recommendation: 8 agents
-- Sensitivity capacity confidence: 0.9404
-- Sensitivity expected overtime: 0.30987599999999993 hours
-- Sensitivity expected abandoned reservations: 0.10406040593956131
-- Sensitivity expected total economic cost: 7071.583710601327
-- Recommendation shift under 0.80x handling times: `-1` agent
+- Baseline recommendation: 12 agents
+- Baseline in-house coverage probability: 0.8558
+- Baseline expected overflow commission: 971.88
+- Baseline expected total weekly operating cost: 11531.88
+- Sensitivity recommendation: 11 agents
+- Sensitivity in-house coverage probability: 0.9548
+- Sensitivity expected overflow commission: 256.70
+- Sensitivity expected total weekly operating cost: 9936.70
+- Recommendation shift under 0.85x handling times: `-1` agent
 
 ## Assumptions Table
 
@@ -43,11 +41,11 @@ Source artifacts:
 |---|---:|---|
 | Forecast weights | 0.4, 0.3, 0.2, 0.1 | `ABC_Cruise_Lines_Design_Document.md`, `data/case_study_input.json`, `data/probabilistic_case_study_input.json` |
 | Planning horizon | 1 week | `ABC_Cruise_Lines_Design_Document.md` |
-| Category set | `simple`, `standard`, `complex_group`, `change_cancellation` | `ABC_Cruise_Lines_Design_Document.md` |
+| Category set | `day_cruise`, `seven_night_cruise`, `nine_night_cruise` | `config/defaults.json`, `data/probabilistic_case_study_input.json` |
 | Paid hours per agent | 40.0 hours/week | `data/case_study_input.json`, `data/probabilistic_case_study_input.json` |
-| Productive processing percentage | 0.75 in validation case, 0.85 in probabilistic case | `data/case_study_input.json`, `data/probabilistic_case_study_input.json` |
-| Overtime multiplier | 1.5 | `data/case_study_input.json`, `data/probabilistic_case_study_input.json` |
-| Abandonment rate | 0.5 in validation case, 0.1 in probabilistic case | `data/case_study_input.json`, `data/probabilistic_case_study_input.json` |
+| Weekly booking-processing hours per agent | 12.5 hours/week | `config/defaults.json`, `data/probabilistic_case_study_input.json` |
+| Minimum coverage target | 0.85 | `config/defaults.json`, `data/probabilistic_case_study_input.json` |
+| Third-party commission rate | 0.125 | `config/defaults.json`, `data/probabilistic_case_study_input.json` |
 | Simulation iterations | 5000 | `data/probabilistic_case_study_input.json` |
 | Random seed | 510 | `data/probabilistic_case_study_input.json` |
 | Lean/Balanced/Conservative confidence targets | 0.50 / 0.85 / 0.95 | `data/probabilistic_case_study_input.json`, `ABC_Cruise_DSS_Development_WBS.md` |
@@ -60,29 +58,29 @@ Source artifacts:
   - `Workload minutes = demand * handling time`
 - Total workload:
   - `Total workload hours = sum(category workload minutes) / 60`
-- Productive hours per agent:
-  - `Paid hours * productive processing percentage`
+- Booking-processing hours per agent:
+  - `Configured weekly booking-processing hours per agent`
 - Required FTE:
-  - `Workload hours / productive hours per agent`
+  - `Workload hours / booking-processing hours per agent`
 - Whole-agent staffing:
   - `ceil(required FTE)`
-- Economic cost:
-  - `regular labor cost + overtime cost + lost contribution`
+- Total weekly operating cost:
+  - `regular labor cost + expected overflow commission`
 
 ## Process Flow
 
 ```text
 Historical weekly demand
   -> 4-week weighted moving-average forecast
+  -> optional manual central-forecast overrides
   -> uncertainty estimate by category
   -> Monte Carlo demand sampling
   -> workload minutes by category
-  -> productive hours per agent
   -> required FTE and whole-agent staffing
-  -> Lean / Balanced / Conservative plans
-  -> overtime, abandonment, and cost evaluation
-  -> financially recommended staffing level
-  -> manager-facing narrative and comparison table
+  -> evaluate feasible staffing range against minimum coverage target
+  -> exact manager-proposal evaluation
+  -> P25 / P50 / P90 representative outlook selection by total workload
+  -> staffing risk-cost comparison and manager-facing narrative
 ```
 
 ## Validation Evidence
@@ -94,13 +92,11 @@ Historical weekly demand
 
 ## Key Recommendation
 
-For the baseline probabilistic case, schedule **9 reservation agents** for the upcoming week. That baseline recommendation is the final release-state result captured in `data/probabilistic_case_study_report.json`. Under the documented handling-time improvement scenario, the recommendation shifts to **8 agents**, which is useful as a sensitivity example but does not replace the baseline recommendation.
+For the baseline probabilistic case, schedule **12 reservation agents** for the upcoming week. That release-state recommendation is recorded in `data/probabilistic_case_study_report.json`. Under the documented faster-booking sensitivity, the recommendation shifts to **11 agents**, which is useful as a planning example but does not replace the baseline recommendation policy.
 
 ## Limitations
 
 - The dataset is synthetic rather than live operational data.
 - The model is weekly tactical only and does not do hourly scheduling.
 - The prototype does not model shift rostering, queueing, or waiting-time behavior directly.
-- Abandonment uses a simplified global rate.
 - Screenshots were not saved in this environment; the report team should rely on the structured JSON and markdown outputs listed above.
-

@@ -99,15 +99,22 @@ def calculate_overflow_allocation_by_category(
             for category in RESERVATION_CATEGORIES
         }
 
-    overflow_bookings_by_category = {
-        category:
+    overflow_bookings_by_category = {}
+    for category in RESERVATION_CATEGORIES:
+        raw_overflow_bookings = (
             overflow_hours_by_category[category]
             * MINUTES_PER_HOUR
             / normalized_handling_times[category]
-        for category in RESERVATION_CATEGORIES
-    }
+        )
+        overflow_bookings_by_category[category] = min(
+            max(raw_overflow_bookings, 0.0),
+            normalized_demand[category],
+        )
     inhouse_bookings_by_category = {
-        category: normalized_demand[category] - overflow_bookings_by_category[category]
+        category: max(
+            normalized_demand[category] - overflow_bookings_by_category[category],
+            0.0,
+        )
         for category in RESERVATION_CATEGORIES
     }
 

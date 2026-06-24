@@ -7,6 +7,7 @@ from typing import Any, ClassVar
 
 from src.constants import (
     CONFIDENCE_TARGET_FIELDS,
+    DECISION_POLICY_FIELDS,
     FORECAST_SOURCES,
     RESERVATION_CATEGORIES,
     SIMULATION_SUPPORTED_DISTRIBUTIONS,
@@ -55,8 +56,37 @@ def _validate_decimal(name: str, value: float) -> float:
     return value
 
 
+def _validate_boolean(name: str, value: bool) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be a boolean")
+    return value
+
+
+def _validate_non_empty_text(name: str, value: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be a non-empty string")
+    return value
+
+
 def _dataclass_field_names(model_type: type[Any]) -> tuple[str, ...]:
     return tuple(field.name for field in fields(model_type))
+
+
+def _validate_category_metric_map(
+    name: str,
+    values: dict[str, float],
+) -> dict[str, float]:
+    if not isinstance(values, dict):
+        raise ValueError(f"{name} must be a dictionary keyed by category")
+    if tuple(values.keys()) != RESERVATION_CATEGORIES:
+        raise ValueError(
+            f"{name} must include each canonical category exactly once and in the shared order "
+            f"{RESERVATION_CATEGORIES}"
+        )
+    return {
+        category: _validate_non_negative(f"{name}.{category}", values[category])
+        for category in RESERVATION_CATEGORIES
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,13 +183,11 @@ class StrategicAssumptions:
     """Shared strategic business-case assumptions kept separate from weekly staffing."""
 
     third_party_commission_rate: float
-    inhouse_capture_target: float
 
     _FIELD_NAMES: ClassVar[tuple[str, ...]]
 
     def __post_init__(self) -> None:
         _validate_decimal("third_party_commission_rate", self.third_party_commission_rate)
-        _validate_decimal("inhouse_capture_target", self.inhouse_capture_target)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a plain dictionary using the canonical contract field names."""
@@ -175,6 +203,36 @@ class StrategicAssumptions:
 
 
 StrategicAssumptions._FIELD_NAMES = _dataclass_field_names(StrategicAssumptions)
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionPolicy:
+    """Shared decision-policy inputs for recommendation selection."""
+
+    minimum_inhouse_coverage_target: float
+
+    _FIELD_NAMES: ClassVar[tuple[str, ...]]
+
+    def __post_init__(self) -> None:
+        _validate_decimal(
+            "minimum_inhouse_coverage_target",
+            self.minimum_inhouse_coverage_target,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a plain dictionary using the canonical contract field names."""
+
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DecisionPolicy":
+        """Build the model from a dictionary with exact contract keys."""
+
+        _require_exact_keys(cls.__name__, data, DECISION_POLICY_FIELDS)
+        return cls(**data)
+
+
+DecisionPolicy._FIELD_NAMES = _dataclass_field_names(DecisionPolicy)
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,6 +349,67 @@ class ConfidenceTargets:
 
 
 ConfidenceTargets._FIELD_NAMES = _dataclass_field_names(ConfidenceTargets)
+
+
+@dataclass(frozen=True, slots=True)
+class RepresentativeDemandOutlook:
+    """Structured representative Monte Carlo outlook for one planning percentile."""
+
+    outlook_name: str
+    percentile: float
+    percentile_label: str
+    simulation_row_id: int
+    representative_row_reused: bool
+    demand_by_category: dict[str, float]
+    total_bookings: float
+    workload_hours_by_category: dict[str, float]
+    total_workload_hours: float
+    raw_required_fte: float
+    unconstrained_required_agents: int
+    recommended_inhouse_agents_for_outlook: int
+    spare_capacity_hours: float
+    overflow_workload_hours: float
+    overflow_bookings_by_category: dict[str, float]
+    regular_labor_cost: float
+    overflow_commission: float
+    total_weekly_operating_cost: float
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_text("outlook_name", self.outlook_name)
+        _validate_decimal("percentile", self.percentile)
+        _validate_non_empty_text("percentile_label", self.percentile_label)
+        if self.simulation_row_id <= 0:
+            raise ValueError("simulation_row_id must be greater than 0")
+        _validate_boolean("representative_row_reused", self.representative_row_reused)
+        _validate_category_metric_map("demand_by_category", self.demand_by_category)
+        _validate_non_negative("total_bookings", self.total_bookings)
+        _validate_category_metric_map(
+            "workload_hours_by_category",
+            self.workload_hours_by_category,
+        )
+        _validate_non_negative("total_workload_hours", self.total_workload_hours)
+        _validate_non_negative("raw_required_fte", self.raw_required_fte)
+        if self.unconstrained_required_agents < 0:
+            raise ValueError("unconstrained_required_agents must be non-negative")
+        if self.recommended_inhouse_agents_for_outlook < 0:
+            raise ValueError("recommended_inhouse_agents_for_outlook must be non-negative")
+        _validate_non_negative("spare_capacity_hours", self.spare_capacity_hours)
+        _validate_non_negative("overflow_workload_hours", self.overflow_workload_hours)
+        _validate_category_metric_map(
+            "overflow_bookings_by_category",
+            self.overflow_bookings_by_category,
+        )
+        _validate_non_negative("regular_labor_cost", self.regular_labor_cost)
+        _validate_non_negative("overflow_commission", self.overflow_commission)
+        _validate_non_negative(
+            "total_weekly_operating_cost",
+            self.total_weekly_operating_cost,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a plain dictionary using the shared outlook field names."""
+
+        return asdict(self)
 
 
 def validate_forecast_source(forecast_source: str) -> str:

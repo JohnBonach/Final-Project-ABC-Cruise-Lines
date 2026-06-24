@@ -1,81 +1,71 @@
 {
   "artifact_role": "probabilistic_case_study_input",
   "case_name": "four_week_handling_time_sensitivity_case",
-  "description": "A reproducible probabilistic case study using the last four synthetic history weeks, a fixed Monte Carlo seed, and a handling-time improvement scenario that changes the staffing recommendation.",
+  "description": "A reproducible probabilistic case study using the last four synthetic history weeks, the approved coverage-target recommendation policy, and a handling-time improvement sensitivity.",
   "previous_week_staffing": 9,
-  "manager_planned_staffing": 8,
+  "manager_proposed_staffing": 10,
   "baseline": {
     "history": [
       {
-        "week_id": "2026-W21",
-        "week_start": "2026-05-18",
-        "simple": 297,
-        "standard": 233,
-        "complex_group": 34,
-        "change_cancellation": 132,
-        "staffing_agents": 9
-      },
-      {
-        "week_id": "2026-W22",
-        "week_start": "2026-05-25",
-        "simple": 380,
-        "standard": 244,
-        "complex_group": 36,
-        "change_cancellation": 128,
-        "staffing_agents": 10
-      },
-      {
         "week_id": "2026-W23",
         "week_start": "2026-06-01",
-        "simple": 358,
-        "standard": 196,
-        "complex_group": 44,
-        "change_cancellation": 150,
+        "day_cruise": 210,
+        "seven_night_cruise": 135,
+        "nine_night_cruise": 70,
         "staffing_agents": 9
       },
       {
         "week_id": "2026-W24",
         "week_start": "2026-06-08",
-        "simple": 342,
-        "standard": 205,
-        "complex_group": 37,
-        "change_cancellation": 176,
+        "day_cruise": 230,
+        "seven_night_cruise": 150,
+        "nine_night_cruise": 80,
+        "staffing_agents": 10
+      },
+      {
+        "week_id": "2026-W25",
+        "week_start": "2026-06-15",
+        "day_cruise": 300,
+        "seven_night_cruise": 200,
+        "nine_night_cruise": 130,
+        "staffing_agents": 12
+      },
+      {
+        "week_id": "2026-W26",
+        "week_start": "2026-06-22",
+        "day_cruise": 195,
+        "seven_night_cruise": 125,
+        "nine_night_cruise": 70,
         "staffing_agents": 9
       }
     ],
     "category_assumptions": [
       {
-        "category": "simple",
-        "handling_time_minutes": 15.0,
-        "average_revenue": 400.0,
-        "contribution_per_reservation": 80.0
+        "category": "day_cruise",
+        "handling_time_minutes": 8.0,
+        "average_booking_value": 500.0
       },
       {
-        "category": "standard",
-        "handling_time_minutes": 35.0,
-        "average_revenue": 1800.0,
-        "contribution_per_reservation": 360.0
+        "category": "seven_night_cruise",
+        "handling_time_minutes": 22.0,
+        "average_booking_value": 2200.0
       },
       {
-        "category": "complex_group",
-        "handling_time_minutes": 75.0,
-        "average_revenue": 6000.0,
-        "contribution_per_reservation": 1200.0
-      },
-      {
-        "category": "change_cancellation",
-        "handling_time_minutes": 20.0,
-        "average_revenue": 75.0,
-        "contribution_per_reservation": 25.0
+        "category": "nine_night_cruise",
+        "handling_time_minutes": 28.0,
+        "average_booking_value": 2800.0
       }
     ],
     "workforce_assumptions": {
       "paid_hours_per_agent": 40.0,
-      "productive_processing_pct": 0.85,
+      "weekly_booking_processing_hours_per_agent": 12.5,
       "regular_hourly_wage": 22.0,
-      "overtime_multiplier": 1.5,
-      "abandonment_rate": 0.1,
-      "planned_staffing_agents": 9
+      "minimum_schedulable_agents": 8,
+      "maximum_inhouse_agents": 12,
+      "planned_staffing_agents": 10
+    },
+    "decision_policy": {
+      "minimum_inhouse_coverage_target": 0.85
     },
     "forecast_configuration": {
       "weights": [
@@ -97,11 +87,14 @@
       "lean": 0.5,
       "balanced": 0.85,
       "conservative": 0.95
+    },
+    "strategic_assumptions": {
+      "third_party_commission_rate": 0.125
     }
   },
   "sensitivity": {
-    "scenario_name": "process_improvement",
-    "description": "Reduce every category handling time by 20 percent to represent a faster booking workflow.",
-    "handling_time_multiplier": 0.8
+    "sensitivity_name": "faster_booking_workflow",
+    "description": "Reduce every category handling time by 15 percent to represent a faster reservation workflow.",
+    "handling_time_multiplier": 0.85
   }
 }

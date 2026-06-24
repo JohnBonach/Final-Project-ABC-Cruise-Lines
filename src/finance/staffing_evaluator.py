@@ -12,6 +12,7 @@ from src.constants import (
     CATEGORY_ASSUMPTIONS_COLUMNS,
     RESERVATION_CATEGORIES,
     SIMULATION_OUTPUT_COLUMNS,
+    STAFFING_FEASIBILITY_STATUSES,
 )
 from src.finance.economics import calculate_weekly_operating_financials
 from src.models import CategoryAssumptions, StrategicAssumptions, WorkforceAssumptions
@@ -28,6 +29,7 @@ from src.validation import (
     FieldValidationError,
     validate_non_negative,
     validate_non_negative_integer,
+    validate_percentage,
     validate_positive,
 )
 
@@ -185,6 +187,154 @@ def _ensure_completed_simulation(
     )
 
 
+def classify_staffing_feasibility_status(
+    staffing_agents: int,
+    workforce_assumptions: WorkforceAssumptions | Mapping[str, Any],
+) -> str:
+    """Classify a staffing level relative to the operating floor and in-house cap."""
+
+    normalized_staffing_agents = validate_non_negative_integer(
+        "staffing_agents",
+        staffing_agents,
+    )
+    normalized_workforce_assumptions = _normalize_workforce_assumptions(
+        workforce_assumptions
+    )
+    minimum_staffing = normalized_workforce_assumptions.minimum_schedulable_agents
+    maximum_staffing = normalized_workforce_assumptions.maximum_inhouse_agents
+
+    if normalized_staffing_agents < minimum_staffing:
+        return STAFFING_FEASIBILITY_STATUSES[0]
+    if normalized_staffing_agents > maximum_staffing:
+        return STAFFING_FEASIBILITY_STATUSES[2]
+    return STAFFING_FEASIBILITY_STATUSES[1]
+
+
+def build_staffing_feasibility_flags(
+    staffing_agents: int,
+    workforce_assumptions: WorkforceAssumptions | Mapping[str, Any],
+) -> dict[str, bool]:
+    """Return mutually exclusive feasibility flags for one staffing level."""
+
+    feasibility_status = classify_staffing_feasibility_status(
+        staffing_agents,
+        workforce_assumptions,
+    )
+    return {
+        "is_below_operating_floor": (
+            feasibility_status == "below_operating_floor"
+        ),
+        "is_within_operating_range": (
+            feasibility_status == "within_operating_range"
+        ),
+        "is_above_inhouse_capacity": (
+            feasibility_status == "above_inhouse_capacity"
+        ),
+    }
+
+
+def build_feasibility_warnings(
+    staffing_agents: int,
+    workforce_assumptions: WorkforceAssumptions | Mapping[str, Any],
+) -> list[str]:
+    """Return boundary warnings for exact what-if staffing evaluations."""
+
+    normalized_workforce_assumptions = _normalize_workforce_assumptions(
+        workforce_assumptions
+    )
+    feasibility_status = classify_staffing_feasibility_status(
+        staffing_agents,
+        normalized_workforce_assumptions,
+    )
+    if feasibility_status == "below_operating_floor":
+        return [
+            "This staffing level is below the configured operating floor and is evaluated as an exact what-if plan only."
+        ]
+    if feasibility_status == "above_inhouse_capacity":
+        return [
+            "This staffing level is above the configured in-house capacity cap and is evaluated as an exact what-if plan only."
+        ]
+    return []
+
+
+def _extract_expected_overflow_bookings_by_category(
+    staffing_evaluation: Mapping[str, Any],
+) -> dict[str, float]:
+    return {
+        "day_cruise": validate_non_negative(
+            "expected_overflow_day_cruise",
+            staffing_evaluation["expected_overflow_day_cruise"],
+        ),
+        "seven_night_cruise": validate_non_negative(
+            "expected_overflow_seven_night_cruise",
+            staffing_evaluation["expected_overflow_seven_night_cruise"],
+        ),
+        "nine_night_cruise": validate_non_negative(
+            "expected_overflow_nine_night_cruise",
+            staffing_evaluation["expected_overflow_nine_night_cruise"],
+        ),
+    }
+
+
+def build_structured_staffing_record(
+    staffing_evaluation: Mapping[str, Any],
+    workforce_assumptions: WorkforceAssumptions | Mapping[str, Any],
+    *,
+    include_boundary_warnings: bool = False,
+) -> dict[str, Any]:
+    """Convert a flat staffing evaluation row into a structured backend record."""
+
+    normalized_staffing_agents = validate_non_negative_integer(
+        "staffing_evaluation['staffing_agents']",
+        staffing_evaluation["staffing_agents"],
+    )
+    feasibility_status = classify_staffing_feasibility_status(
+        normalized_staffing_agents,
+        workforce_assumptions,
+    )
+    structured_record = {
+        "staffing_agents": normalized_staffing_agents,
+        "feasibility_status": feasibility_status,
+        "capacity_confidence": validate_percentage(
+            "staffing_evaluation['capacity_confidence']",
+            staffing_evaluation["capacity_confidence"],
+        ),
+        "probability_overflow_required": validate_percentage(
+            "staffing_evaluation['probability_overflow_required']",
+            staffing_evaluation["probability_overflow_required"],
+        ),
+        "expected_spare_capacity_hours": validate_non_negative(
+            "staffing_evaluation['expected_spare_capacity_hours']",
+            staffing_evaluation["expected_spare_capacity_hours"],
+        ),
+        "expected_overflow_workload_hours": validate_non_negative(
+            "staffing_evaluation['expected_overflow_workload_hours']",
+            staffing_evaluation["expected_overflow_workload_hours"],
+        ),
+        "expected_overflow_bookings_by_category": (
+            _extract_expected_overflow_bookings_by_category(staffing_evaluation)
+        ),
+        "regular_labor_cost": validate_non_negative(
+            "staffing_evaluation['regular_labor_cost']",
+            staffing_evaluation["regular_labor_cost"],
+        ),
+        "expected_overflow_commission": validate_non_negative(
+            "staffing_evaluation['expected_overflow_commission']",
+            staffing_evaluation["expected_overflow_commission"],
+        ),
+        "expected_total_weekly_operating_cost": validate_non_negative(
+            "staffing_evaluation['expected_total_weekly_operating_cost']",
+            staffing_evaluation["expected_total_weekly_operating_cost"],
+        ),
+    }
+    if include_boundary_warnings:
+        structured_record["warnings"] = build_feasibility_warnings(
+            normalized_staffing_agents,
+            workforce_assumptions,
+        )
+    return structured_record
+
+
 def evaluate_staffing_level(
     simulated_demand: pd.DataFrame,
     staffing_agents: int,
@@ -300,7 +450,11 @@ def evaluate_staffing_level(
 
 
 __all__ = [
+    "build_feasibility_warnings",
+    "build_staffing_feasibility_flags",
+    "build_structured_staffing_record",
     "calculate_regular_labor_cost",
     "calculate_regular_labor_cost_from_workforce",
+    "classify_staffing_feasibility_status",
     "evaluate_staffing_level",
 ]

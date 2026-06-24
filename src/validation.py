@@ -14,6 +14,7 @@ from src.constants import RESERVATION_CATEGORIES
 from src.models import (
     CategoryAssumptions,
     ConfidenceTargets,
+    DecisionPolicy,
     ForecastConfiguration,
     SimulationConfiguration,
     StrategicAssumptions,
@@ -28,27 +29,12 @@ DEFAULTS_TOP_LEVEL_FIELDS = (
     "schema_version",
     "category_assumptions",
     "workforce_assumptions",
+    "decision_policy",
     "forecast_configuration",
     "simulation_configuration",
     "confidence_targets",
     "strategic_assumptions",
 )
-SCENARIOS_TOP_LEVEL_FIELDS = (
-    "schema_version",
-    "scenarios",
-)
-SCENARIO_FIELDS = (
-    "scenario_name",
-    "demand_multiplier",
-    "variability_multiplier",
-    "description",
-)
-EXPECTED_SCENARIO_NAMES = (
-    "Low Demand",
-    "Expected Demand",
-    "High Demand",
-)
-
 
 class ValidationError(ValueError):
     """Base class for deterministic validation failures."""
@@ -298,6 +284,7 @@ def validate_defaults_config(payload: dict[str, Any]) -> dict[str, Any]:
     workforce_assumptions = WorkforceAssumptions.from_dict(
         payload["workforce_assumptions"]
     )
+    decision_policy = DecisionPolicy.from_dict(payload["decision_policy"])
     forecast_configuration = ForecastConfiguration.from_dict(
         payload["forecast_configuration"]
     )
@@ -336,6 +323,7 @@ def validate_defaults_config(payload: dict[str, Any]) -> dict[str, Any]:
         "schema_version": payload["schema_version"],
         "category_assumptions": category_assumptions,
         "workforce_assumptions": workforce_assumptions,
+        "decision_policy": decision_policy,
         "forecast_configuration": forecast_configuration,
         "simulation_configuration": simulation_configuration,
         "confidence_targets": confidence_targets,
@@ -349,65 +337,6 @@ def load_defaults_config(path: str | Path) -> dict[str, Any]:
     return validate_defaults_config(_load_json_file(path))
 
 
-def validate_scenarios_config(payload: dict[str, Any]) -> dict[str, Any]:
-    """Validate and normalize named demand scenarios."""
-
-    _require_exact_keys("scenarios configuration", payload, SCENARIOS_TOP_LEVEL_FIELDS)
-
-    scenario_payload = payload["scenarios"]
-    if not isinstance(scenario_payload, list):
-        raise FieldValidationError("scenarios must be a list")
-
-    normalized_scenarios: list[dict[str, Any]] = []
-    for item in scenario_payload:
-        if not isinstance(item, dict):
-            raise FieldValidationError("each scenario must be an object")
-        _require_exact_keys("scenario", item, SCENARIO_FIELDS)
-
-        scenario_name = item["scenario_name"]
-        if not isinstance(scenario_name, str) or not scenario_name:
-            raise FieldValidationError("scenario_name must be a non-empty string")
-
-        demand_multiplier = validate_positive(
-            f"{scenario_name} demand_multiplier",
-            item["demand_multiplier"],
-        )
-        variability_multiplier = validate_non_negative(
-            f"{scenario_name} variability_multiplier",
-            item["variability_multiplier"],
-        )
-
-        description = item["description"]
-        if not isinstance(description, str) or not description:
-            raise FieldValidationError("description must be a non-empty string")
-
-        normalized_scenarios.append(
-            {
-                "scenario_name": scenario_name,
-                "demand_multiplier": demand_multiplier,
-                "variability_multiplier": variability_multiplier,
-                "description": description,
-            }
-        )
-
-    scenario_names = tuple(item["scenario_name"] for item in normalized_scenarios)
-    if scenario_names != EXPECTED_SCENARIO_NAMES:
-        raise FieldValidationError(
-            "scenarios must include Low Demand, Expected Demand, and High Demand in that order"
-        )
-
-    return {
-        "schema_version": payload["schema_version"],
-        "scenarios": normalized_scenarios,
-    }
-
-
-def load_scenarios_config(path: str | Path) -> dict[str, Any]:
-    """Load, validate, and normalize the named scenarios configuration file."""
-
-    return validate_scenarios_config(_load_json_file(path))
-
-
 __all__ = [
     "DEFAULT_WEIGHT_SUM_TOLERANCE",
     "MAX_NUMPY_SEED",
@@ -417,7 +346,6 @@ __all__ = [
     "ValidationError",
     "create_numpy_generator",
     "load_defaults_config",
-    "load_scenarios_config",
     "normalize_random_seed",
     "validate_defaults_config",
     "validate_non_negative",
@@ -426,6 +354,5 @@ __all__ = [
     "validate_positive",
     "validate_positive_integer",
     "validate_required_history_weeks",
-    "validate_scenarios_config",
     "validate_weights",
 ]

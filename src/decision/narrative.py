@@ -107,6 +107,136 @@ def _normalize_staffing_agents(record: Mapping[str, Any], field_name: str) -> in
     return validate_non_negative_integer(field_name, record["staffing_agents"])
 
 
+def build_manager_comparison_narrative(
+    recommendation_policy: Mapping[str, Any],
+    recommended_plan: Mapping[str, Any],
+    manager_proposal: Mapping[str, Any],
+    comparison: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build adaptive narrative text for manager-versus-recommendation comparison."""
+
+    if not isinstance(recommendation_policy, Mapping):
+        raise FieldValidationError("recommendation_policy must be a mapping")
+    if not isinstance(recommended_plan, Mapping):
+        raise FieldValidationError("recommended_plan must be a mapping")
+    if not isinstance(manager_proposal, Mapping):
+        raise FieldValidationError("manager_proposal must be a mapping")
+    if not isinstance(comparison, Mapping):
+        raise FieldValidationError("comparison must be a mapping")
+
+    recommended_staffing = _normalize_staffing_agents(
+        recommended_plan,
+        "recommended_plan['staffing_agents']",
+    )
+    manager_staffing = _normalize_staffing_agents(
+        manager_proposal,
+        "manager_proposal['staffing_agents']",
+    )
+    staffing_difference = int(comparison["staffing_difference"])
+    coverage_difference = float(comparison["coverage_difference"])
+    overflow_probability_difference = float(
+        comparison["overflow_probability_difference"]
+    )
+    labor_cost_difference = float(comparison["labor_cost_difference"])
+    overflow_commission_difference = float(
+        comparison["overflow_commission_difference"]
+    )
+    total_cost_difference = float(comparison["total_cost_difference"])
+    manager_feasibility_status = str(comparison["manager_feasibility_status"])
+    coverage_target_met = bool(recommended_plan.get("coverage_target_met", True))
+    monetary_tolerance = validate_non_negative(
+        "recommendation_policy['selection_tolerance']",
+        recommendation_policy.get("selection_tolerance", 0.01),
+    )
+
+    warnings: list[str] = list(manager_proposal.get("warnings", []))
+    recommendation_warning = recommended_plan.get("warning")
+    if recommendation_warning:
+        warnings.append(str(recommendation_warning))
+
+    if staffing_difference == 0:
+        opening = (
+            f"The manager proposal matches the model recommendation at {manager_staffing} agents."
+        )
+    elif staffing_difference < 0:
+        opening = (
+            f"The manager proposal uses {abs(staffing_difference)} fewer agents than the model recommendation "
+            f"({manager_staffing} vs. {recommended_staffing})."
+        )
+    else:
+        opening = (
+            f"The manager proposal uses {staffing_difference} more agents than the model recommendation "
+            f"({manager_staffing} vs. {recommended_staffing})."
+        )
+
+    coverage_sentence = (
+        "Estimated in-house coverage changes by "
+        f"{coverage_difference * 100.0:+.1f} percentage points, and overflow probability changes by "
+        f"{overflow_probability_difference * 100.0:+.1f} percentage points."
+    )
+
+    if (
+        labor_cost_difference < -monetary_tolerance
+        and overflow_commission_difference > monetary_tolerance
+    ):
+        tradeoff_sentence = (
+            "The manager plan lowers regular labor cost but increases expected overflow commission."
+        )
+    elif (
+        labor_cost_difference > monetary_tolerance
+        and overflow_commission_difference < -monetary_tolerance
+    ):
+        tradeoff_sentence = (
+            "The manager plan raises regular labor cost while reducing expected overflow commission."
+        )
+    else:
+        tradeoff_sentence = None
+
+    if total_cost_difference > monetary_tolerance:
+        total_cost_sentence = (
+            "Overall, the manager plan increases expected total weekly operating cost."
+        )
+    elif total_cost_difference < -monetary_tolerance:
+        total_cost_sentence = (
+            "Overall, the manager plan reduces expected total weekly operating cost."
+        )
+    else:
+        total_cost_sentence = (
+            "Overall, the manager plan is effectively cost-neutral relative to the recommendation within the approved monetary tolerance."
+        )
+
+    feasibility_sentence = None
+    if manager_feasibility_status == "below_operating_floor":
+        feasibility_sentence = (
+            "The manager proposal is below the operating floor, so it is treated as an exact what-if evaluation and not as an eligible recommendation candidate."
+        )
+    elif manager_feasibility_status == "above_inhouse_capacity":
+        feasibility_sentence = (
+            "The manager proposal is above the in-house capacity cap, so it is treated as an exact what-if evaluation and not as an eligible recommendation candidate."
+        )
+
+    target_sentence = None
+    if not coverage_target_met:
+        target_sentence = (
+            "The configured in-house coverage target is not achievable within the feasible in-house range, so the model recommendation falls back to the maximum feasible staffing level."
+        )
+
+    text_parts = [opening, coverage_sentence]
+    if tradeoff_sentence is not None:
+        text_parts.append(tradeoff_sentence)
+    text_parts.append(total_cost_sentence)
+    if feasibility_sentence is not None:
+        text_parts.append(feasibility_sentence)
+    if target_sentence is not None:
+        text_parts.append(target_sentence)
+
+    return {
+        "text": " ".join(text_parts),
+        "warnings": warnings,
+        "difference_direction": "manager_value_minus_recommendation_value",
+    }
+
+
 def build_recommendation_warnings(
     recommendation: Mapping[str, Any],
     comparison_table: pd.DataFrame,
@@ -191,6 +321,7 @@ def build_recommendation_text(
 
 
 __all__ = [
+    "build_manager_comparison_narrative",
     "build_recommendation_text",
     "build_recommendation_warnings",
 ]
