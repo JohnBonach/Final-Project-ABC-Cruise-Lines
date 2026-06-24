@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -11,36 +13,48 @@ import streamlit as st
 
 from src.constants import CATEGORY_DISPLAY_LABELS, RESERVATION_CATEGORIES
 from src.data.loader import build_history_diagnostics, load_and_validate_history
-from src.ui.charts import (
-    build_category_assumptions_frame,
-    build_deterministic_kpi_frame,
-    build_financial_breakdown_frame,
-    build_forecast_breakdown_frame,
-    build_forecast_display_frame,
-    build_history_display_frame,
-    build_history_display_frame_with_labels,
-    build_methodology_points,
-    build_overflow_detail_frame,
-    build_results_export_frames,
-    build_secondary_kpi_frame,
-    build_staffing_capacity_frame,
-    build_workload_breakdown_frame,
-)
-from src.ui.state import (
-    category_assumption_key,
-    decimal_to_percent,
-    initialize_session_state,
-    manual_override_enabled_key,
-    manual_override_value_key,
-    percent_to_decimal,
-    reset_session_state,
-    run_analysis_for_current_draft,
-    simulation_control_key,
-    strategic_control_key,
-    update_draft_inputs_from_widgets,
-    workforce_control_key,
-)
 from src.validation import EXPECTED_SCENARIO_NAMES, load_defaults_config
+
+
+def _load_ui_module(module_name: str, required_attrs: tuple[str, ...]):
+    """Load a fresh UI helper module if Streamlit cached a partial import."""
+    module = importlib.import_module(module_name)
+    if all(hasattr(module, attr_name) for attr_name in required_attrs):
+        return module
+
+    sys.modules.pop(module_name, None)
+    return importlib.import_module(module_name)
+
+
+charts = _load_ui_module(
+    "src.ui.charts",
+    (
+        "build_financial_breakdown_frame",
+        "build_forecast_breakdown_frame",
+        "build_history_display_frame_with_labels",
+        "build_methodology_points",
+        "build_overflow_detail_frame",
+        "build_results_export_frames",
+        "build_staffing_capacity_frame",
+        "build_workload_breakdown_frame",
+    ),
+)
+state = _load_ui_module(
+    "src.ui.state",
+    (
+        "category_assumption_key",
+        "decimal_to_percent",
+        "initialize_session_state",
+        "manual_override_enabled_key",
+        "manual_override_value_key",
+        "reset_session_state",
+        "run_analysis_for_current_draft",
+        "simulation_control_key",
+        "strategic_control_key",
+        "update_draft_inputs_from_widgets",
+        "workforce_control_key",
+    ),
+)
 
 BASE_PATH = Path(__file__).resolve().parents[2]
 HISTORY_PATH = BASE_PATH / "data" / "synthetic_history.csv"
