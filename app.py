@@ -11,7 +11,7 @@ if str(_project_root) not in sys.path:
 
 import streamlit as st
 
-from src.ui.components import _load_defaults, _load_history, render_main_dashboard
+from src.ui import components
 
 
 def main() -> None:
@@ -20,7 +20,7 @@ def main() -> None:
         page_icon="\U0001f6a2",
         layout="wide",
     )
-    render_main_dashboard()
+    components.render_main_dashboard()
 
 
 if __name__ == "__main__":
