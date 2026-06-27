@@ -1,6 +1,8 @@
-# ABC Cruise Lines Reservation Staffing DSS
+# ABC Cruise Lines Voyage Command DSS
 
-ABC Cruise Lines Reservation Staffing DSS is a Python and Streamlit decision support system for weekly reservation staffing. It forecasts category-level demand, estimates workload, evaluates staffing choices under uncertainty, and recommends a financially justified number of reservation agents.
+Voyage Command is a Python and Streamlit decision support system for ABC Cruise Lines. It forecasts reservation demand, evaluates weekly staffing choices under uncertainty, models the annual direct-booking business case, and recommends a transparent weekly commercial action.
+
+The project is a fictional class prototype. Historical demand and commercial assumptions are synthetic and are labeled as scenario estimates in the interface.
 
 ## Setup
 
@@ -64,6 +66,15 @@ python -m unittest tests.test_ui_bundle tests.test_end_to_end tests.test_decisio
 - The recommendation objective is total weekly operating cost:
   regular labor cost plus expected third-party overflow commission.
 - Managers can set a minimum in-house coverage target, evaluate an exact manager staffing proposal, and optionally apply manual category forecast overrides before rerunning the analysis.
+- The direct-channel baseline uses $80M annual commissionable revenue, a 12.5% blended commission, 0% current direct capture, a 50% target, and $1M annual DSS operating cost. These editable assumptions reproduce the case brief's $4M net annual benefit.
+- The weekly commercial recommender compares Protect Yield (+10%), Hold (0%), and Promote (-8%) scenario actions with a synthetic price-elasticity assumption and explicit operational guardrails.
+
+## Decision Modules
+
+- `Command Deck`: week-ahead recommendation, demand signals, risk, and manager brief.
+- `Workforce Planner`: coverage policy, manager staffing proposal, forecast overrides, and detailed assumptions.
+- `Commercial Strategy`: annual direct-channel economics plus weekly pricing/promotion action.
+- `Scenarios & Evidence`: P25/P50/P90 demand outlooks, risk-cost evidence, calculations, methodology, and exports.
 
 ## Known Limitations
 
@@ -71,7 +82,8 @@ python -m unittest tests.test_ui_bundle tests.test_end_to_end tests.test_decisio
 - It does not model customer waiting-time behavior directly.
 - It does not integrate with a real reservation system or live operational data.
 - It does not optimize recruitment, training, or part-time staffing.
-- It is designed for weekly tactical staffing, not full workforce management.
+- Commercial outputs are deterministic planning scenarios, not causal demand forecasts or production revenue-management instructions.
+- It is designed for weekly tactical decision support, not full workforce, fleet, or revenue management.
 
 ## Troubleshooting
 
