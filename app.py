@@ -1,4 +1,4 @@
-"""Streamlit entry point for the ABC Cruise Lines Reservation Staffing DSS."""
+"""Streamlit entry point for the ABC Cruise Lines Voyage Command DSS."""
 
 from __future__ import annotations
 
@@ -25,9 +25,10 @@ def _load_components_module():
 
 def main() -> None:
     st.set_page_config(
-        page_title="ABC Cruise Lines Reservation Staffing DSS",
+        page_title="Voyage Command | ABC Cruise Lines",
         page_icon="\U0001f6a2",
         layout="wide",
+        initial_sidebar_state="collapsed",
     )
     components = _load_components_module()
     components.render_main_dashboard()

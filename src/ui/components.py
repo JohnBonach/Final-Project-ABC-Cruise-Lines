@@ -1,7 +1,8 @@
-"""Reusable Streamlit components for the single-page manager dashboard."""
+"""Reusable Streamlit components for the Voyage Command manager cockpit."""
 
 from __future__ import annotations
 
+import base64
 import importlib
 import json
 import sys
@@ -59,6 +60,10 @@ state = _load_ui_module(
         "workforce_control_key",
     ),
 )
+commercial = _load_ui_module(
+    "src.ui.commercial",
+    ("render_commercial_strategy",),
+)
 
 build_financial_breakdown_frame = charts.build_financial_breakdown_frame
 build_forecast_breakdown_frame = charts.build_forecast_breakdown_frame
@@ -83,10 +88,12 @@ simulation_control_key = state.simulation_control_key
 strategic_control_key = state.strategic_control_key
 update_draft_inputs_from_widgets = state.update_draft_inputs_from_widgets
 workforce_control_key = state.workforce_control_key
+render_commercial_strategy = commercial.render_commercial_strategy
 
 BASE_PATH = Path(__file__).resolve().parents[2]
 HISTORY_PATH = BASE_PATH / "data" / "synthetic_history.csv"
 DEFAULTS_PATH = BASE_PATH / "config" / "defaults.json"
+ASSET_PATH = BASE_PATH / "Additinoal Information" / "images"
 
 COVERAGE_TARGET_PERCENT_KEY = "ui_minimum_inhouse_coverage_target_percent"
 COMMISSION_RATE_PERCENT_KEY = "ui_third_party_commission_rate_percent"
@@ -108,6 +115,15 @@ def _format_percent(value: float) -> str:
 
 def _format_currency(value: float) -> str:
     return f"${float(value):,.0f}"
+
+
+@st.cache_data(show_spinner=False)
+def _asset_data_uri(filename: str) -> str:
+    """Return a local visual asset as an embeddable data URI."""
+    path = ASSET_PATH / filename
+    mime_type = "image/svg+xml" if path.suffix.lower() == ".svg" else "image/jpeg"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
 
 
 def _sync_display_percent_keys() -> None:
@@ -221,23 +237,39 @@ def _inject_dashboard_css() -> None:
         <style>
         :root {
             color-scheme: light;
+            --ink: #102F46;
+            --navy: #082A44;
+            --ocean: #0B6E8A;
+            --aqua: #BFE7E5;
+            --brass: #C9A14A;
+            --mist: #F2F6F5;
+            --surface: rgba(255, 255, 255, 0.94);
+            --line: #D8E3EA;
+            --muted: #5B7185;
+            --coral: #C85B4B;
         }
         .stApp,
         [data-testid="stAppViewContainer"],
         [data-testid="stHeader"],
         [data-testid="stMainBlockContainer"] {
-            color: #17324D !important;
+            color: var(--ink) !important;
         }
         .stApp {
             background:
-                radial-gradient(circle at top right, rgba(0, 105, 148, 0.10), transparent 28%),
-                linear-gradient(180deg, #F6FAFC 0%, #EEF3F7 100%);
+                radial-gradient(circle at 88% 4%, rgba(191, 231, 229, 0.52), transparent 24rem),
+                radial-gradient(circle at 4% 34%, rgba(201, 161, 74, 0.10), transparent 26rem),
+                linear-gradient(180deg, #F8FAF8 0%, var(--mist) 48%, #E9F0F1 100%);
         }
         [data-testid="stHeader"] {
             background: transparent !important;
         }
+        [data-testid="stMainBlockContainer"] {
+            max-width: 1480px;
+            padding-top: 1.5rem;
+            padding-bottom: 4rem;
+        }
         [data-testid="stToolbar"] {
-            color: #17324D !important;
+            color: var(--ink) !important;
         }
         [data-testid="stMarkdownContainer"] p,
         [data-testid="stMarkdownContainer"] li,
@@ -249,59 +281,142 @@ def _inject_dashboard_css() -> None:
         .stCheckbox label,
         .stRadio label,
         .stTextInput label {
-            color: #17324D !important;
+            color: var(--ink) !important;
         }
         h1, h2, h3 {
-            color: #17324D;
+            color: var(--navy);
+            font-family: Georgia, 'Times New Roman', serif;
+            letter-spacing: -0.02em;
+        }
+        .brand-masthead {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            padding: 10px 0 18px;
+            border-bottom: 1px solid rgba(8, 42, 68, 0.14);
+            margin-bottom: 12px;
+        }
+        .brand-lockup {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .brand-logo {
+            width: 68px;
+            height: 48px;
+            object-fit: contain;
+            object-position: center;
+        }
+        .brand-kicker {
+            color: var(--brass) !important;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            margin: 0 0 2px !important;
+        }
+        .brand-title {
+            color: var(--navy) !important;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: clamp(1.35rem, 2.4vw, 2rem);
+            line-height: 1.05;
+            margin: 0 !important;
+        }
+        .brand-status {
+            color: var(--muted) !important;
+            font-size: 0.78rem;
+            letter-spacing: 0.04em;
+            text-align: right;
+            text-transform: uppercase;
+        }
+        .live-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #2D8A64;
+            box-shadow: 0 0 0 4px rgba(45, 138, 100, 0.12);
+            margin-right: 8px;
         }
         .section-title {
-            font-size: 1.2rem;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 1.42rem;
             font-weight: 700;
-            color: #17324D;
-            margin: 30px 0 12px 0;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #0B6E8A;
+            color: var(--navy);
+            margin: 28px 0 12px;
+            padding-bottom: 9px;
+            border-bottom: 1px solid rgba(11, 110, 138, 0.28);
         }
         .hero-card {
-            background: linear-gradient(135deg, #17324D 0%, #0B6E8A 100%);
-            border-radius: 18px;
-            padding: 30px 34px;
-            margin: 12px 0 20px 0;
+            min-height: 330px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            background-position: center 48%;
+            background-size: cover;
+            border-radius: 26px;
+            padding: clamp(28px, 5vw, 58px);
+            margin: 18px 0 22px;
             color: #FFFFFF;
-            box-shadow: 0 12px 30px rgba(23, 50, 77, 0.18);
+            box-shadow: 0 24px 60px rgba(8, 42, 68, 0.22);
+            overflow: hidden;
+            position: relative;
         }
         .hero-eyebrow {
-            color: rgba(255,255,255,0.82);
-            font-size: 0.95rem;
-            letter-spacing: 0.02em;
+            color: #F4DDA4;
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.15em;
             text-transform: uppercase;
         }
         .hero-number {
-            font-size: 3.2rem;
-            font-weight: 800;
-            line-height: 1.0;
-            margin: 10px 0 8px 0;
+            max-width: 760px;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: clamp(3rem, 7vw, 5.4rem);
+            font-weight: 700;
+            line-height: 0.94;
+            letter-spacing: -0.055em;
+            margin: 12px 0 14px;
         }
         .hero-detail {
             color: #E7F5FB;
-            font-size: 0.98rem;
+            font-size: 1rem;
             line-height: 1.55;
-            margin-top: 14px;
+            max-width: 780px;
+            margin: 0 0 18px;
+        }
+        .hero-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 9px;
+        }
+        .hero-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 7px 11px;
+            border: 1px solid rgba(255,255,255,0.28);
+            border-radius: 999px;
+            background: rgba(4, 28, 45, 0.42);
+            color: #FFFFFF !important;
+            font-size: 0.78rem;
+            font-weight: 700;
+            backdrop-filter: blur(8px);
         }
         .hero-card,
         .hero-card * {
             color: #FFFFFF !important;
         }
         .hero-card .hero-eyebrow {
-            color: rgba(255,255,255,0.82) !important;
+            color: #F4DDA4 !important;
         }
         .hero-card .hero-detail {
             color: #E7F5FB !important;
         }
         .surface-card {
-            background: rgba(255, 255, 255, 0.92);
-            border: 1px solid #D8E3EA;
-            border-radius: 16px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 18px;
             padding: 20px 22px;
             box-shadow: 0 6px 18px rgba(17, 43, 60, 0.05);
         }
@@ -332,10 +447,11 @@ def _inject_dashboard_css() -> None:
             color: #5B7185;
         }
         div[data-testid="stMetric"] {
-            background: rgba(255,255,255,0.92);
-            border-radius: 12px;
-            padding: 12px 14px;
-            border: 1px solid #D8E3EA;
+            background: var(--surface);
+            border-radius: 16px;
+            padding: 14px 16px;
+            border: 1px solid rgba(8, 42, 68, 0.10);
+            box-shadow: 0 8px 24px rgba(8, 42, 68, 0.055);
         }
         div[data-testid="stMetric"] label,
         div[data-testid="stMetric"] [data-testid="stMetricValue"],
@@ -354,11 +470,13 @@ def _inject_dashboard_css() -> None:
             background: #FFFFFF !important;
         }
         button[kind="primary"] {
-            background-color: #0B6E8A !important;
-            border-color: #0B6E8A !important;
+            background-color: var(--ocean) !important;
+            border-color: var(--ocean) !important;
         }
         .stButton button {
-            border-radius: 8px;
+            border-radius: 999px;
+            min-height: 2.7rem;
+            font-weight: 700;
         }
         .stButton button,
         .stDownloadButton button {
@@ -368,8 +486,45 @@ def _inject_dashboard_css() -> None:
         }
         .stButton button[kind="primary"] {
             color: #FFFFFF !important;
-            background-color: #0B6E8A !important;
-            border-color: #0B6E8A !important;
+            background: linear-gradient(120deg, var(--navy), var(--ocean)) !important;
+            border-color: var(--ocean) !important;
+        }
+        button[data-baseweb="tab"] {
+            color: var(--muted) !important;
+            font-weight: 750 !important;
+            padding-left: 1.1rem !important;
+            padding-right: 1.1rem !important;
+        }
+        button[data-baseweb="tab"][aria-selected="true"] {
+            color: var(--navy) !important;
+        }
+        [data-baseweb="tab-highlight"] {
+            background-color: var(--brass) !important;
+            height: 3px !important;
+        }
+        [data-testid="stAlert"] {
+            border-radius: 14px;
+        }
+        .tab-intro {
+            max-width: 820px;
+            color: var(--muted) !important;
+            line-height: 1.65;
+            margin: 6px 0 18px !important;
+        }
+        @media (max-width: 760px) {
+            [data-testid="stMainBlockContainer"] {
+                padding-left: 1rem;
+                padding-right: 1rem;
+            }
+            .brand-status { display: none; }
+            .brand-logo { width: 54px; height: 40px; }
+            .hero-card { min-height: 390px; border-radius: 20px; }
+            .hero-number { font-size: 3.2rem; }
+            button[data-baseweb="tab"] {
+                padding-left: 0.7rem !important;
+                padding-right: 0.7rem !important;
+                font-size: 0.82rem !important;
+            }
         }
         </style>
         """,
@@ -378,24 +533,25 @@ def _inject_dashboard_css() -> None:
 
 
 def render_header() -> None:
+    logo_uri = _asset_data_uri("abc_cruise_logo_v5.svg")
     st.markdown(
-        """
-        <div style="display:flex; align-items:center; gap:16px; margin-bottom:4px;">
-            <div style="font-size:2rem;">&#x1F6A2;</div>
-            <div>
-                <h1 style="margin:0; font-size:1.75rem;">ABC Cruise Lines</h1>
-                <p style="margin:2px 0 0 0; color:#5B7185; font-size:1rem;">
-                    Reservation Staffing Decision Support System
-                </p>
+        f"""
+        <div class="brand-masthead">
+            <div class="brand-lockup">
+                <img class="brand-logo" src="{logo_uri}" alt="ABC Cruise Lines logo" />
+                <div>
+                    <p class="brand-kicker">ABC Cruise Lines</p>
+                    <h1 class="brand-title">Voyage Command</h1>
+                </div>
             </div>
+            <div class="brand-status"><span class="live-dot"></span>Planning model ready<br/>Week-ahead decision support</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
     st.caption(
-        "Run a weekly reservation staffing analysis, compare the model recommendation with a manager proposal, and review lower, central, and higher demand planning outlooks."
+        "A simulated operations cockpit for workforce capacity, direct-channel economics, and weekly commercial action."
     )
-    st.divider()
 
 
 def render_action_row(session_state: Mapping[str, Any]) -> None:
@@ -407,7 +563,7 @@ def render_action_row(session_state: Mapping[str, Any]) -> None:
     col1, col2, col3, col4 = st.columns([1.2, 1.0, 1.0, 4.2], gap="small")
 
     with col1:
-        if st.button("Run Analysis", type="primary", use_container_width=True):
+        if st.button("Run Analysis", type="primary", width="stretch"):
             run_analysis_for_current_draft(
                 st.session_state,
                 history=history,
@@ -416,7 +572,7 @@ def render_action_row(session_state: Mapping[str, Any]) -> None:
             st.rerun()
 
     with col2:
-        if st.button("Reset to Baseline", use_container_width=True):
+        if st.button("Reset to Baseline", width="stretch"):
             reset_session_state(
                 st.session_state,
                 history=history,
@@ -431,7 +587,7 @@ def render_action_row(session_state: Mapping[str, Any]) -> None:
                 data=_build_summary_csv(application_result),
                 file_name="abc_cruise_staffing_summary.csv",
                 mime="text/csv",
-                use_container_width=True,
+                width="stretch",
             )
 
     with col4:
@@ -441,7 +597,7 @@ def render_action_row(session_state: Mapping[str, Any]) -> None:
                 data=_build_export_payload(application_result, applied_inputs),
                 file_name="abc_cruise_staffing_full_result.json",
                 mime="application/json",
-                use_container_width=False,
+                width="content",
             )
 
     if session_state.get("results_stale", False):
@@ -458,11 +614,20 @@ def render_hero_card(session_state: Mapping[str, Any]) -> None:
         return
 
     recommended_plan = application_result["recommended_plan"]
+    hero_uri = _asset_data_uri("reservation-bg.jpg")
+    coverage = _format_percent(recommended_plan["capacity_confidence"])
+    weekly_cost = _format_currency(recommended_plan["expected_total_weekly_operating_cost"])
+    forecast_bookings = float(application_result["central_demand_outlook"]["total_bookings"])
     html = f"""
-    <div class="hero-card">
-        <div class="hero-eyebrow">Recommended In-House Staffing</div>
+    <div class="hero-card" style="background-image:linear-gradient(90deg, rgba(4,25,42,.96) 0%, rgba(4,34,55,.84) 45%, rgba(4,34,55,.28) 100%), url('{hero_uri}');">
+        <div class="hero-eyebrow">This week's operating brief</div>
         <div class="hero-number">{int(recommended_plan["staffing_agents"])} agents</div>
         <div class="hero-detail">{_build_hero_reason(recommended_plan)}</div>
+        <div class="hero-chip-row">
+            <span class="hero-chip">{coverage} in-house coverage</span>
+            <span class="hero-chip">{forecast_bookings:.0f} forecast bookings</span>
+            <span class="hero-chip">{weekly_cost} weekly operating cost</span>
+        </div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
@@ -480,29 +645,37 @@ def render_kpi_grid(session_state: Mapping[str, Any]) -> None:
     previous_week_context = application_result["previous_week_staffing_context"]
     total_bookings = float(application_result["central_demand_outlook"]["total_bookings"])
 
-    st.markdown('<p class="section-title">Recommendation Snapshot</p>', unsafe_allow_html=True)
-    col1, col2, col3, col4, col5 = st.columns(5, gap="small")
-    col1.metric("Selected Coverage Target", _format_percent(
-        recommended_plan["selected_minimum_inhouse_coverage_target"]
-    ))
-    col2.metric("In-House Coverage Probability", _format_percent(
+    st.markdown('<p class="section-title">Decision Signals</p>', unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4, gap="small")
+    col1.metric("Coverage Probability", _format_percent(
         recommended_plan["capacity_confidence"]
     ))
-    col3.metric("Probability Overflow Is Required", _format_percent(
+    col2.metric("Overflow Risk", _format_percent(
         recommended_plan["probability_overflow_required"]
     ))
-    col4.metric("Central Forecast Bookings", f"{total_bookings:.1f}")
-    col5.metric("Total Weekly Operating Cost", _format_currency(
+    col3.metric("Central Demand", f"{total_bookings:.0f} bookings")
+    col4.metric("Weekly Operating Cost", _format_currency(
         recommended_plan["expected_total_weekly_operating_cost"]
     ))
 
     col1, col2, col3, col4 = st.columns(4, gap="small")
-    col1.metric("Manager Proposal", f"{int(application_result['manager_proposal']['staffing_agents'])} agents")
+    col1.metric("Manager Plan", f"{int(application_result['manager_proposal']['staffing_agents'])} agents")
     col2.metric("Previous Week", f"{int(previous_week_context['staffing_agents'])} agents")
-    col3.metric("Expected Spare Capacity", f"{float(recommended_plan['expected_spare_capacity_hours']):.1f} hrs")
-    col4.metric("Expected Overflow Commission", _format_currency(
+    col3.metric("Spare Capacity", f"{float(recommended_plan['expected_spare_capacity_hours']):.1f} hrs")
+    col4.metric("Overflow Commission", _format_currency(
         recommended_plan["expected_overflow_commission"]
     ))
+
+
+def render_demand_trend() -> None:
+    """Render a compact historical-demand signal for the command deck."""
+    history = _load_history().copy()
+    history["week_start"] = pd.to_datetime(history["week_start"], errors="raise")
+    trend = history.set_index("week_start").loc[:, list(RESERVATION_CATEGORIES)]
+    trend = trend.rename(columns=CATEGORY_DISPLAY_LABELS)
+    st.markdown("#### Booking Demand Trend")
+    st.caption("Synthetic weekly reservation history by cruise product.")
+    st.line_chart(trend, height=260, width="stretch")
 
 
 def render_narrative(session_state: Mapping[str, Any]) -> None:
@@ -673,7 +846,7 @@ def render_plan_comparison_section(session_state: Mapping[str, Any]) -> None:
         application_result["recommended_plan"],
         application_result["manager_proposal"],
     )
-    st.dataframe(comparison_frame, use_container_width=True, hide_index=True)
+    st.dataframe(comparison_frame, width="stretch", hide_index=True)
 
     comparison = application_result["recommendation_manager_comparison"]
     diff_frame = pd.DataFrame(
@@ -699,7 +872,7 @@ def render_plan_comparison_section(session_state: Mapping[str, Any]) -> None:
             }
         ]
     )
-    st.dataframe(diff_frame, use_container_width=True, hide_index=True)
+    st.dataframe(diff_frame, width="stretch", hide_index=True)
 
 
 def _render_outlook_card(
@@ -789,7 +962,7 @@ def render_staffing_risk_cost_section(session_state: Mapping[str, Any]) -> None:
     risk_cost_frame = build_staffing_risk_cost_frame(
         application_result["staffing_risk_cost_records"]
     )
-    st.dataframe(risk_cost_frame, use_container_width=True, hide_index=True)
+    st.dataframe(risk_cost_frame, width="stretch", hide_index=True)
 
 
 def render_analysis_details_expander(session_state: Mapping[str, Any]) -> None:
@@ -807,7 +980,7 @@ def render_analysis_details_expander(session_state: Mapping[str, Any]) -> None:
         st.markdown("### Historical Demand")
         st.dataframe(
             build_history_display_frame_with_labels(history),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -824,7 +997,7 @@ def render_analysis_details_expander(session_state: Mapping[str, Any]) -> None:
                 if "manual_overrides" in applied
                 else None,
             ),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -835,7 +1008,7 @@ def render_analysis_details_expander(session_state: Mapping[str, Any]) -> None:
                 deterministic,
                 applied.get("category_assumptions", defaults_for_category_labels()),
             ),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -845,7 +1018,7 @@ def render_analysis_details_expander(session_state: Mapping[str, Any]) -> None:
                 deterministic,
                 applied.get("workforce_assumptions", {}),
             ),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -853,7 +1026,7 @@ def render_analysis_details_expander(session_state: Mapping[str, Any]) -> None:
             st.markdown("### Overflow Detail")
             st.dataframe(
                 build_overflow_detail_frame(deterministic),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -868,7 +1041,7 @@ def render_analysis_details_expander(session_state: Mapping[str, Any]) -> None:
                     {"third_party_commission_rate": 0.125},
                 ),
             ),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -909,13 +1082,56 @@ def render_main_dashboard() -> None:
     _sync_display_percent_keys()
 
     render_action_row(st.session_state)
-    render_hero_card(st.session_state)
-    render_kpi_grid(st.session_state)
-    render_narrative(st.session_state)
-    render_plan_comparison_section(st.session_state)
-    render_probabilistic_outlooks(st.session_state)
-    render_business_decisions_section()
-    render_business_assumptions_expander()
-    render_staffing_risk_cost_section(st.session_state)
-    render_analysis_details_expander(st.session_state)
-    render_methodology_expander()
+
+    command_tab, workforce_tab, commercial_tab, evidence_tab = st.tabs(
+        (
+            "Command Deck",
+            "Workforce Planner",
+            "Commercial Strategy",
+            "Scenarios & Evidence",
+        )
+    )
+
+    with command_tab:
+        render_hero_card(st.session_state)
+        render_kpi_grid(st.session_state)
+        trend_col, brief_col = st.columns([1.25, 1.0], gap="large")
+        with trend_col:
+            render_demand_trend()
+        with brief_col:
+            st.markdown("#### Manager Brief")
+            st.caption("What changed, where the risk sits, and how the recommendation compares.")
+            render_narrative(st.session_state)
+
+    with workforce_tab:
+        st.markdown('<p class="section-title">Reservation Workforce Planner</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="tab-intro">Shape the coverage policy, test an exact manager plan, and override category forecasts before applying a new analysis.</p>',
+            unsafe_allow_html=True,
+        )
+        render_business_decisions_section()
+        render_business_assumptions_expander()
+        render_plan_comparison_section(st.session_state)
+
+    with commercial_tab:
+        application_result = st.session_state.get("analysis_result")
+        applied_inputs = st.session_state.get("applied_inputs")
+        if application_result and applied_inputs:
+            render_commercial_strategy(
+                application_result,
+                applied_inputs["category_assumptions"],
+                float(applied_inputs["strategic_assumptions"]["third_party_commission_rate"]),
+            )
+        else:
+            st.info("Run the staffing analysis to unlock the connected commercial strategy model.")
+
+    with evidence_tab:
+        st.markdown('<p class="section-title">Scenarios & Evidence</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="tab-intro">Stress-test the recommendation across demand conditions, then inspect the full risk-cost evidence and calculation trail.</p>',
+            unsafe_allow_html=True,
+        )
+        render_probabilistic_outlooks(st.session_state)
+        render_staffing_risk_cost_section(st.session_state)
+        render_analysis_details_expander(st.session_state)
+        render_methodology_expander()

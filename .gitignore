@@ -1,1 +1,5 @@
 /Baseline Ideas/
+__pycache__/
+*.py[cod]
+streamlit_sprint*.log
+tmp/
