@@ -219,10 +219,37 @@ def _inject_dashboard_css() -> None:
     st.markdown(
         """
         <style>
+        :root {
+            color-scheme: light;
+        }
+        .stApp,
+        [data-testid="stAppViewContainer"],
+        [data-testid="stHeader"],
+        [data-testid="stMainBlockContainer"] {
+            color: #17324D !important;
+        }
         .stApp {
             background:
                 radial-gradient(circle at top right, rgba(0, 105, 148, 0.10), transparent 28%),
                 linear-gradient(180deg, #F6FAFC 0%, #EEF3F7 100%);
+        }
+        [data-testid="stHeader"] {
+            background: transparent !important;
+        }
+        [data-testid="stToolbar"] {
+            color: #17324D !important;
+        }
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li,
+        [data-testid="stMarkdownContainer"] span,
+        [data-testid="stCaptionContainer"],
+        label,
+        .stSelectbox label,
+        .stNumberInput label,
+        .stCheckbox label,
+        .stRadio label,
+        .stTextInput label {
+            color: #17324D !important;
         }
         h1, h2, h3 {
             color: #17324D;
@@ -260,6 +287,16 @@ def _inject_dashboard_css() -> None:
             font-size: 0.98rem;
             line-height: 1.55;
             margin-top: 14px;
+        }
+        .hero-card,
+        .hero-card * {
+            color: #FFFFFF !important;
+        }
+        .hero-card .hero-eyebrow {
+            color: rgba(255,255,255,0.82) !important;
+        }
+        .hero-card .hero-detail {
+            color: #E7F5FB !important;
         }
         .surface-card {
             background: rgba(255, 255, 255, 0.92);
@@ -300,12 +337,39 @@ def _inject_dashboard_css() -> None:
             padding: 12px 14px;
             border: 1px solid #D8E3EA;
         }
+        div[data-testid="stMetric"] label,
+        div[data-testid="stMetric"] [data-testid="stMetricValue"],
+        div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+            color: #17324D !important;
+        }
+        div[data-testid="stDataFrame"],
+        div[data-testid="stTable"] {
+            background: rgba(255, 255, 255, 0.96);
+            color: #17324D !important;
+        }
+        div[data-baseweb="input"] input,
+        div[data-baseweb="base-input"] input,
+        textarea {
+            color: #17324D !important;
+            background: #FFFFFF !important;
+        }
         button[kind="primary"] {
             background-color: #0B6E8A !important;
             border-color: #0B6E8A !important;
         }
         .stButton button {
             border-radius: 8px;
+        }
+        .stButton button,
+        .stDownloadButton button {
+            color: #17324D !important;
+            background: #FFFFFF !important;
+            border: 1px solid #C9D6DF !important;
+        }
+        .stButton button[kind="primary"] {
+            color: #FFFFFF !important;
+            background-color: #0B6E8A !important;
+            border-color: #0B6E8A !important;
         }
         </style>
         """,

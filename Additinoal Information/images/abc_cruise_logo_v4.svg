@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <linearGradient id="navy" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0c3b5e"/>
+      <stop offset="100%" stop-color="#082a44"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Emblem: simplified, flat, iconic ship mark -->
+  <g transform="translate(320,118)">
+    <!-- circle ring -->
+    <circle cx="0" cy="0" r="78" fill="none" stroke="#0c3b5e" stroke-width="2"/>
+    <circle cx="0" cy="0" r="70" fill="none" stroke="#c9a14a" stroke-width="1.5"/>
+
+    <!-- waves beneath -->
+    <path d="M-55 28 Q -38 18 -21 28 T 13 28 T 47 28" fill="none" stroke="#c9a14a" stroke-width="3" stroke-linecap="round"/>
+    <path d="M-50 40 Q -33 32 -16 40 T 18 40 T 50 40" fill="none" stroke="#0c3b5e" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+
+    <!-- hull: single clean flowing shape -->
+    <path d="M-58 18
+             C -58 18, -50 30, -30 30
+             L 36 30
+             C 50 30, 58 22, 60 10
+             L 64 -2
+             C 65 -8, 60 -11, 53 -10
+             L -34 -10
+             C -48 -10, -57 2, -58 18 Z"
+          fill="#0c3b5e"/>
+
+    <!-- superstructure: two clean tiers -->
+    <path d="M-32 -10 L 38 -10 L 30 -26 L -24 -26 Z" fill="#0c3b5e"/>
+    <path d="M-14 -26 L 22 -26 L 16 -38 L -8 -38 Z" fill="#0c3b5e"/>
+
+    <!-- funnel -->
+    <rect x="-2" y="-58" width="14" height="22" rx="3" fill="#c9a14a"/>
+
+    <!-- single mast line -->
+    <line x1="30" y1="-26" x2="30" y2="-42" stroke="#0c3b5e" stroke-width="2.5"/>
+    <circle cx="30" cy="-44" r="2.5" fill="#c9a14a"/>
+
+    <!-- bow flag accent -->
+    <path d="M60 10 L 72 13 L 60 16 Z" fill="#c9a14a"/>
+  </g>
+
+  <!-- divider -->
+  <line x1="180" y1="232" x2="460" y2="232" stroke="#c9a14a" stroke-width="1.5"/>
+  <circle cx="320" cy="232" r="3.5" fill="#c9a14a"/>
+
+  <!-- Wordmark -->
+  <text x="320" y="278" font-family="'Trajan Pro','Times New Roman',Georgia,serif" font-size="46"
+        font-weight="600" text-anchor="middle" fill="url(#navy)" letter-spacing="10">ABC</text>
+  <text x="320" y="306" font-family="'Trajan Pro','Times New Roman',Georgia,serif" font-size="18"
+        text-anchor="middle" fill="#c9a14a" letter-spacing="9">C R U I S E</text>
+</svg>

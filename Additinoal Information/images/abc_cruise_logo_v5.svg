@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 380" width="640" height="380">
+  <defs>
+    <linearGradient id="navyText" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0c3b5e"/>
+      <stop offset="100%" stop-color="#082a44"/>
+    </linearGradient>
+    <linearGradient id="goldStroke" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d4af6a"/>
+      <stop offset="100%" stop-color="#b8893f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Abstract monogram mark: an "A" reimagined as a horizon + two converging wake lines, with a rising sun -->
+  <g transform="translate(320,116)">
+    <circle cx="0" cy="0" r="82" fill="none" stroke="#0c3b5e" stroke-width="4"/>
+
+    <!-- rising sun arc, partially cropped by horizon -->
+    <path d="M -27 4 A 27 27 0 1 1 27 4" fill="none" stroke="url(#goldStroke)" stroke-width="8.5" stroke-linecap="round"/>
+
+    <!-- horizon line -->
+    <line x1="-60" y1="4" x2="60" y2="4" stroke="#0c3b5e" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- two converging wake / "A" legs sweeping from the horizon down and out, echoing both a wave and the letter A -->
+    <path d="M -8 4 C -22 26, -46 44, -66 51" fill="none" stroke="#0c3b5e" stroke-width="8.5" stroke-linecap="round"/>
+    <path d="M 8 4 C 22 26, 46 44, 66 51" fill="none" stroke="#0c3b5e" stroke-width="8.5" stroke-linecap="round"/>
+
+    <!-- crossbar of the implied A, doubling as a wave crest -->
+    <path d="M -29 34 Q 0 23 29 34" fill="none" stroke="url(#goldStroke)" stroke-width="6.5" stroke-linecap="round"/>
+
+    <!-- single navigational dot at the sun's peak -->
+    <circle cx="0" cy="-23" r="5" fill="#0c3b5e"/>
+  </g>
+
+  <!-- divider -->
+  <line x1="178" y1="236" x2="462" y2="236" stroke="#b8893f" stroke-width="2.5"/>
+  <circle cx="320" cy="236" r="4.5" fill="#b8893f"/>
+
+  <!-- Wordmark -->
+  <text x="320" y="286" font-family="'Trajan Pro','Times New Roman',Georgia,serif" font-size="60"
+        font-weight="800" text-anchor="middle" fill="url(#navyText)" letter-spacing="12">ABC</text>
+  <text x="320" y="318" font-family="'Trajan Pro','Times New Roman',Georgia,serif" font-size="21"
+        font-weight="700" text-anchor="middle" fill="#b8893f" letter-spacing="12">C R U I S E</text>
+</svg>

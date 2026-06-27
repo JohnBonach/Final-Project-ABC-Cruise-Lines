@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ABC Cruise Lines — Book a Cruise</title>
+    <link rel="icon" href="images/abc_cruise_logo_v5.svg" />
+    <link rel="stylesheet" href="styles.css?v=9" />
+  </head>
+  <body class="client-page">
+    <!-- Background video (slowed down via JS); falls back to the .ocean image if it can't play -->
+    <video class="bg-video" autoplay muted loop playsinline preload="auto" aria-hidden="true">
+      <source src="images/bg-video.mp4" type="video/mp4" />
+    </video>
+    <!-- Animated sea background (pure CSS/SVG) — fallback behind the video -->
+    <div class="ocean ocean-client" aria-hidden="true">
+      <div class="sun"></div>
+      <div class="wave wave1"></div>
+      <div class="wave wave2"></div>
+      <div class="wave wave3"></div>
+    </div>
+    <div id="root"></div>
+    <!-- No external dependencies — runs fully offline -->
+    <script>
+      window.APP_MODE = "customer";
+      // slow the background video down (it plays too fast at 1x)
+      (function () {
+        var v = document.querySelector(".bg-video");
+        if (!v) return;
+        var SPEED = 0.5; // 50% speed — change this to taste
+        function slow() { try { v.playbackRate = SPEED; } catch (e) {} }
+        v.addEventListener("loadedmetadata", slow);
+        v.addEventListener("play", slow);
+        slow();
+      })();
+    </script>
+    <script src="data.js?v=9"></script>
+    <script src="app.js?v=9"></script>
+  </body>
+</html>
