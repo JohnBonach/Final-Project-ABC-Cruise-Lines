@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Final
 
+# Bump this manually whenever a new application version is published.
+APP_VERSION: Final[str] = "1.0.0"
+
 RESERVATION_CATEGORIES: Final[tuple[str, str, str]] = (
     "day_cruise",
     "seven_night_cruise",

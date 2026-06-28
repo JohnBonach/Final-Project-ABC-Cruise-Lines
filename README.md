@@ -4,6 +4,10 @@ Voyage Command is a Python and Streamlit decision support system for ABC Cruise 
 
 The project is a fictional class prototype. Historical demand and commercial assumptions are synthetic and are labeled as scenario estimates in the interface.
 
+The published build number appears in the top-left masthead. Update `APP_VERSION` in `src/constants.py` manually before publishing a new version.
+
+For a plain-language walkthrough of every tab, control, output, guardrail, and formula, see [`VOYAGE_COMMAND_USER_GUIDE.md`](VOYAGE_COMMAND_USER_GUIDE.md).
+
 ## Setup
 
 This project targets Python 3.10 or newer.

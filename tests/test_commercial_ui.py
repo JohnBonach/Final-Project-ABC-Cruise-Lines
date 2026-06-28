@@ -13,6 +13,8 @@ from src.ui.commercial import (
     _build_channel_business_case,
     _build_channel_scenario_frame,
     _build_weekly_action_frame,
+    _build_weekly_control_metrics,
+    _build_weekly_display_frame,
     _build_weekly_metrics,
     _format_currency,
     _format_percent,
@@ -145,6 +147,56 @@ class CommercialUiHelperTests(unittest.TestCase):
         self.assertGreaterEqual(len(metrics), 2)
         self.assertIn("Expected Net Value", [item["label"] for item in metrics])
 
+    def test_weekly_control_metrics_and_display_frame_expose_live_input_effects(self) -> None:
+        frame = pd.DataFrame(
+            [
+                {
+                    "action": "Protect Yield",
+                    "price_change": 0.10,
+                    "expected_bookings": 90.0,
+                    "gross_revenue": 110_000.0,
+                    "commission_paid": 6_875.0,
+                    "campaign_cost": 0.0,
+                    "net_revenue_after_channel_cost": 103_125.0,
+                    "delta_vs_hold": 3_125.0,
+                    "is_recommended": False,
+                },
+                {
+                    "action": "Hold",
+                    "price_change": 0.0,
+                    "expected_bookings": 100.0,
+                    "gross_revenue": 106_667.0,
+                    "commission_paid": 6_666.69,
+                    "campaign_cost": 0.0,
+                    "net_revenue_after_channel_cost": 100_000.31,
+                    "delta_vs_hold": 0.0,
+                    "is_recommended": True,
+                },
+                {
+                    "action": "Promote",
+                    "price_change": -0.08,
+                    "expected_bookings": 106.4,
+                    "gross_revenue": 104_400.0,
+                    "commission_paid": 6_525.0,
+                    "campaign_cost": 2_500.0,
+                    "net_revenue_after_channel_cost": 95_375.0,
+                    "delta_vs_hold": -4_625.31,
+                    "is_recommended": False,
+                },
+            ]
+        )
+
+        metrics = _build_weekly_control_metrics(frame)
+        display = _build_weekly_display_frame(frame)
+
+        self.assertEqual(len(metrics), 4)
+        self.assertEqual(metrics[0]["value"], "$6,667")
+        self.assertEqual(metrics[-1]["value"], "+6.4")
+        self.assertIn("Net Revenue After Channel Cost", display.columns)
+        self.assertNotIn("expected_bookings_by_category", display.columns)
+        self.assertEqual(display.loc[1, "Recommended"], "Yes")
+        self.assertEqual(display.loc[2, "Fare Change"], "-8%")
+
 
 class CommercialUiRenderTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -242,9 +294,13 @@ class CommercialUiRenderTests(unittest.TestCase):
         self.assertAlmostEqual(self.weekly_calls[0]["direct_capture_rate"], 0.5)
         self.assertTrue(any("Scenario estimates" in text for text in self.fake_st.markdown_calls))
         self.assertTrue(any("Protect Yield" in text for text in self.fake_st.markdown_calls))
+        self.assertTrue(
+            any("share of this week's bookings expected to come through ABC's own direct channels" in text for text in self.fake_st.caption_calls)
+        )
         self.assertGreaterEqual(len(self.fake_st.metric_calls), 4)
         self.assertGreaterEqual(len(self.fake_st.dataframes), 2)
         self.assertGreaterEqual(len(self.fake_st.bar_charts), 2)
+        self.assertIn(2, self.fake_st.columns_calls)
         self.assertIn(
             ("success", "Proceed with the direct-channel capture target."),
             self.fake_st.alerts,

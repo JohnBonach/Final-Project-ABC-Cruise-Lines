@@ -13,7 +13,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from src.constants import CATEGORY_DISPLAY_LABELS, RESERVATION_CATEGORIES
+from src.constants import APP_VERSION, CATEGORY_DISPLAY_LABELS, RESERVATION_CATEGORIES
 from src.data.loader import load_and_validate_history
 from src.validation import load_defaults_config
 
@@ -292,21 +292,22 @@ def _inject_dashboard_css() -> None:
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 24px;
-            padding: 10px 0 18px;
+            gap: 32px;
+            padding: 22px 0 26px;
             border-bottom: 1px solid rgba(8, 42, 68, 0.14);
             margin-bottom: 12px;
         }
         .brand-lockup {
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 26px;
         }
         .brand-logo {
-            width: 68px;
-            height: 48px;
+            width: 190px;
+            height: 118px;
             object-fit: contain;
             object-position: center;
+            flex: 0 0 auto;
         }
         .brand-kicker {
             color: var(--brass) !important;
@@ -319,9 +320,24 @@ def _inject_dashboard_css() -> None:
         .brand-title {
             color: var(--navy) !important;
             font-family: Georgia, 'Times New Roman', serif;
-            font-size: clamp(1.35rem, 2.4vw, 2rem);
+            font-size: clamp(1.9rem, 3.3vw, 3rem);
             line-height: 1.05;
             margin: 0 !important;
+        }
+        .brand-version {
+            display: inline-flex;
+            align-items: center;
+            margin-top: 9px;
+            padding: 4px 9px;
+            border: 1px solid rgba(201, 161, 74, 0.5);
+            border-radius: 999px;
+            background: rgba(201, 161, 74, 0.12);
+            color: var(--navy) !important;
+            font-size: 0.66rem;
+            font-weight: 800;
+            letter-spacing: 0.11em;
+            line-height: 1;
+            text-transform: uppercase;
         }
         .brand-status {
             color: var(--muted) !important;
@@ -454,9 +470,11 @@ def _inject_dashboard_css() -> None:
             box-shadow: 0 8px 24px rgba(8, 42, 68, 0.055);
         }
         div[data-testid="stMetric"] label,
-        div[data-testid="stMetric"] [data-testid="stMetricValue"],
-        div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
             color: #17324D !important;
+        }
+        div[data-testid="stMetric"] [data-testid="stMetricDelta"] svg {
+            fill: currentColor !important;
         }
         div[data-testid="stDataFrame"],
         div[data-testid="stTable"] {
@@ -489,6 +507,16 @@ def _inject_dashboard_css() -> None:
             background: linear-gradient(120deg, var(--navy), var(--ocean)) !important;
             border-color: var(--ocean) !important;
         }
+        .stButton button[kind="primary"] p,
+        .stButton button[kind="primary"] span,
+        .stButton button[kind="primary"] svg {
+            color: #FFFFFF !important;
+            fill: #FFFFFF !important;
+        }
+        div[data-testid="stMarkdownContainer"] .hero-card .hero-chip,
+        div[data-testid="stMarkdownContainer"] .hero-card .hero-chip * {
+            color: #FFFFFF !important;
+        }
         button[data-baseweb="tab"] {
             color: var(--muted) !important;
             font-weight: 750 !important;
@@ -517,7 +545,10 @@ def _inject_dashboard_css() -> None:
                 padding-right: 1rem;
             }
             .brand-status { display: none; }
-            .brand-logo { width: 54px; height: 40px; }
+            .brand-masthead { padding-top: 12px; }
+            .brand-lockup { gap: 14px; }
+            .brand-logo { width: 132px; height: 84px; }
+            .brand-title { font-size: 1.75rem; }
             .hero-card { min-height: 390px; border-radius: 20px; }
             .hero-number { font-size: 3.2rem; }
             button[data-baseweb="tab"] {
@@ -542,6 +573,7 @@ def render_header() -> None:
                 <div>
                     <p class="brand-kicker">ABC Cruise Lines</p>
                     <h1 class="brand-title">Voyage Command</h1>
+                    <span class="brand-version">Version {APP_VERSION}</span>
                 </div>
             </div>
             <div class="brand-status"><span class="live-dot"></span>Planning model ready<br/>Week-ahead decision support</div>
@@ -644,27 +676,80 @@ def render_kpi_grid(session_state: Mapping[str, Any]) -> None:
     recommended_plan = application_result["recommended_plan"]
     previous_week_context = application_result["previous_week_staffing_context"]
     total_bookings = float(application_result["central_demand_outlook"]["total_bookings"])
+    previous_week_record = next(
+        (
+            record
+            for record in application_result.get("staffing_risk_cost_records", [])
+            if bool(record.get("is_previous_week"))
+        ),
+        None,
+    )
+
+    def delta(current: float, field: str, formatter: Any) -> str | None:
+        if previous_week_record is None or field not in previous_week_record:
+            return None
+        return formatter(float(current) - float(previous_week_record[field]))
+
+    signed_percent = lambda value: f"{value * 100.0:+.1f} pp vs last week"
+    signed_hours = lambda value: f"{value:+.1f} hrs vs last week"
+    signed_currency = lambda value: f"${value:+,.0f} vs last week"
 
     st.markdown('<p class="section-title">Decision Signals</p>', unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns(4, gap="small")
-    col1.metric("Coverage Probability", _format_percent(
-        recommended_plan["capacity_confidence"]
-    ))
-    col2.metric("Overflow Risk", _format_percent(
-        recommended_plan["probability_overflow_required"]
-    ))
-    col3.metric("Central Demand", f"{total_bookings:.0f} bookings")
-    col4.metric("Weekly Operating Cost", _format_currency(
-        recommended_plan["expected_total_weekly_operating_cost"]
-    ))
+    col1.metric(
+        "Recommended Agents",
+        f"{int(recommended_plan['staffing_agents'])} agents",
+        f"{int(recommended_plan['staffing_agents']) - int(previous_week_context['staffing_agents']):+d} vs last week",
+    )
+    col2.metric(
+        "Coverage Probability",
+        _format_percent(recommended_plan["capacity_confidence"]),
+        delta(recommended_plan["capacity_confidence"], "capacity_confidence", signed_percent),
+    )
+    col3.metric(
+        "Overflow Risk",
+        _format_percent(recommended_plan["probability_overflow_required"]),
+        delta(
+            recommended_plan["probability_overflow_required"],
+            "probability_overflow_required",
+            signed_percent,
+        ),
+    )
+    col4.metric(
+        "Central Demand",
+        f"{total_bookings:.0f} bookings",
+        help="This week's central forecast; no like-for-like prior-week demand baseline is available.",
+    )
 
     col1, col2, col3, col4 = st.columns(4, gap="small")
-    col1.metric("Manager Plan", f"{int(application_result['manager_proposal']['staffing_agents'])} agents")
-    col2.metric("Previous Week", f"{int(previous_week_context['staffing_agents'])} agents")
-    col3.metric("Spare Capacity", f"{float(recommended_plan['expected_spare_capacity_hours']):.1f} hrs")
-    col4.metric("Overflow Commission", _format_currency(
-        recommended_plan["expected_overflow_commission"]
-    ))
+    col1.metric(
+        "Spare Capacity",
+        f"{float(recommended_plan['expected_spare_capacity_hours']):.1f} hrs",
+        delta(recommended_plan["expected_spare_capacity_hours"], "expected_spare_capacity_hours", signed_hours),
+    )
+    col2.metric(
+        "Overflow Commission",
+        _format_currency(recommended_plan["expected_overflow_commission"]),
+        delta(recommended_plan["expected_overflow_commission"], "expected_overflow_commission", signed_currency),
+    )
+    col3.metric(
+        "Weekly Operating Cost",
+        _format_currency(recommended_plan["expected_total_weekly_operating_cost"]),
+        delta(
+            recommended_plan["expected_total_weekly_operating_cost"],
+            "expected_total_weekly_operating_cost",
+            signed_currency,
+        ),
+    )
+    col4.metric(
+        "Manager Plan",
+        f"{int(application_result['manager_proposal']['staffing_agents'])} agents",
+        f"{int(application_result['manager_proposal']['staffing_agents']) - int(previous_week_context['staffing_agents']):+d} vs last week",
+    )
+    st.caption(
+        "Deltas compare this week's modeled plan with the same forecast evaluated at last week's staffing level. "
+        "Green means the value increased; red means it decreased."
+    )
 
 
 def render_demand_trend() -> None:
@@ -889,14 +974,19 @@ def _render_outlook_card(
         diagnostics["selected_total_workload_hours_by_percentile_label"][percentile_label]
     )
     card_class = "outlook-card central" if emphasize else "outlook-card"
+    percentile_name = {
+        "P25": "25th percentile",
+        "P50": "50th percentile (median)",
+        "P90": "90th percentile",
+    }.get(percentile_label, percentile_label)
     st.markdown(
         f"""
         <div class="{card_class}">
-            <div class="outlook-title">{outlook["outlook_name"]} - {percentile_label}</div>
+            <div class="outlook-title">{outlook["outlook_name"]} - {percentile_name}</div>
             <div class="outlook-caption">
-                {"Median simulated workload outlook." if percentile_label == "P50" else
-                 "Relatively lower-demand simulated week." if percentile_label == "P25" else
-                 "Higher-demand planning condition; about 90% of simulated total-workload outcomes are at or below the P90 threshold."}
+                {"Half of simulated weekly workloads are at or below this level." if percentile_label == "P50" else
+                 "About 25% of simulated weekly workloads are at or below this lower-demand level." if percentile_label == "P25" else
+                 "About 90% of simulated weekly workloads are at or below this higher-demand planning level."}
             </div>
         </div>
         """,
@@ -917,10 +1007,9 @@ def _render_outlook_card(
         col2.metric("Representative overflow", f"{float(outlook['overflow_workload_hours']):.1f} hrs")
     else:
         col2.metric("Representative spare capacity", f"{float(outlook['spare_capacity_hours']):.1f} hrs")
-    col1, col2, col3 = st.columns(3, gap="small")
-    col1.metric("Labor cost", _format_currency(outlook["regular_labor_cost"]))
-    col2.metric("Overflow commission", _format_currency(outlook["overflow_commission"]))
-    col3.metric("Operating cost", _format_currency(outlook["total_weekly_operating_cost"]))
+    st.metric("Labor cost", _format_currency(outlook["regular_labor_cost"]))
+    st.metric("Overflow commission", _format_currency(outlook["overflow_commission"]))
+    st.metric("Operating cost", _format_currency(outlook["total_weekly_operating_cost"]))
     st.caption(
         f"Percentile target workload: {target_workload:.1f} hrs. Selected representative row workload: {selected_workload:.1f} hrs. Simulation row id: {int(outlook['simulation_row_id'])}."
     )
@@ -1055,16 +1144,36 @@ def render_methodology_expander() -> None:
     defaults = _load_defaults()
     sim = defaults["simulation_configuration"]
     with st.expander("Methodology", expanded=False):
-        for point in build_methodology_points():
-            st.markdown(f"- {point}")
+        st.markdown("### Calculation Reference")
+        st.markdown(
+            "**Central forecast by cruise type** = `0.40 x latest week + 0.30 x prior week + "
+            "0.20 x two weeks ago + 0.10 x three weeks ago`. An enabled manager override replaces that category forecast."
+        )
+        st.markdown(
+            "**Workload hours** = `sum(forecast bookings by category x handling minutes per booking) / 60`."
+        )
+        st.markdown(
+            "**Weekly processing capacity per agent** = `weekly paid hours x productivity factor`. "
+            "**Raw FTE** = `workload hours / processing capacity per agent`; whole-agent need rounds Raw FTE upward."
+        )
+        st.markdown(
+            "**Coverage probability** = `simulated weeks handled fully in-house / total simulation iterations`. "
+            "**Overflow risk** = `1 - coverage probability`."
+        )
+        st.markdown(
+            "**Expected overflow commission** = the simulation average of `overflow bookings x average booking value "
+            "x third-party commission rate`, calculated by cruise category."
+        )
+        st.markdown(
+            "**Regular labor cost** = `agents x paid hours per week x hourly labor cost`. "
+            "**Total weekly operating cost** = `regular labor cost + expected overflow commission`."
+        )
+        st.markdown(
+            "**Recommended staffing** = the lowest-cost feasible whole-agent level that meets the selected coverage target. "
+            "If no level meets it, the model selects the highest achievable coverage and displays a warning."
+        )
         st.markdown(
             f"- Simulation iterations: `{sim.iterations}` with seed `{sim.random_seed}` and distribution `{sim.distribution_name}`."
-        )
-        st.markdown(
-            "- In-House Coverage Probability means the probability that the selected staffing level can process simulated weekly demand entirely in-house without requiring third-party overflow."
-        )
-        st.markdown(
-            "- Total weekly operating cost equals regular labor cost plus expected third-party overflow commission."
         )
 
 
