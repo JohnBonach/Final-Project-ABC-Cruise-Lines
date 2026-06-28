@@ -3,3 +3,4 @@ __pycache__/
 *.py[cod]
 streamlit_sprint*.log
 tmp/
+.visual-qa-profile*/

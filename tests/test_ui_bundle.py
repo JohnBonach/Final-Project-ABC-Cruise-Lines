@@ -8,7 +8,7 @@ from unittest import mock
 
 import pandas as pd
 
-from src.constants import RESERVATION_CATEGORIES
+from src.constants import APP_VERSION, RESERVATION_CATEGORIES
 from src.forecasting.uncertainty import assemble_forecast_result
 from src.forecasting.weighted_moving_average import calculate_weighted_moving_average
 from src.models import (
@@ -968,6 +968,14 @@ class UIDashboardStructureTests(unittest.TestCase):
         self.assertFalse(hasattr(comp, "render_operations"))
         self.assertFalse(hasattr(comp, "render_results"))
         self.assertFalse(hasattr(comp, "render_sidebar"))
+
+    def test_header_exposes_manual_application_version(self) -> None:
+        from src.ui import components as comp
+
+        source = inspect.getsource(comp.render_header)
+        self.assertRegex(APP_VERSION, r"^\d+\.\d+\.\d+$")
+        self.assertIn("brand-version", source)
+        self.assertIn("Version {APP_VERSION}", source)
 
     def test_state_module_has_no_section_options(self) -> None:
         from src.ui import state as st_mod

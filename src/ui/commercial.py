@@ -343,6 +343,98 @@ def _build_weekly_action_frame(
     return pd.DataFrame()
 
 
+def _build_weekly_display_frame(action_frame: pd.DataFrame) -> pd.DataFrame:
+    """Return a compact, manager-readable action comparison table."""
+    if action_frame.empty:
+        return action_frame
+
+    columns = [
+        column
+        for column in (
+            "action",
+            "price_change",
+            "expected_bookings",
+            "gross_revenue",
+            "commission_paid",
+            "campaign_cost",
+            "net_revenue_after_channel_cost",
+            "delta_vs_hold",
+            "is_recommended",
+        )
+        if column in action_frame.columns
+    ]
+    display = action_frame.loc[:, columns].copy()
+    rename = {
+        "action": "Action",
+        "price_change": "Fare Change",
+        "expected_bookings": "Expected Bookings",
+        "gross_revenue": "Gross Revenue",
+        "commission_paid": "Agent Commission",
+        "campaign_cost": "Campaign Cost",
+        "net_revenue_after_channel_cost": "Net Revenue After Channel Cost",
+        "delta_vs_hold": "Net Change vs Hold",
+        "is_recommended": "Recommended",
+    }
+    display = display.rename(columns=rename)
+    if "Fare Change" in display:
+        display["Fare Change"] = display["Fare Change"].map(_format_signed_percent)
+    if "Expected Bookings" in display:
+        display["Expected Bookings"] = display["Expected Bookings"].map(lambda value: f"{float(value):,.1f}")
+    for column in (
+        "Gross Revenue",
+        "Agent Commission",
+        "Campaign Cost",
+        "Net Revenue After Channel Cost",
+        "Net Change vs Hold",
+    ):
+        if column in display:
+            display[column] = display[column].map(_format_currency)
+    if "Recommended" in display:
+        display["Recommended"] = display["Recommended"].map(lambda value: "Yes" if bool(value) else "")
+    return display
+
+
+def _build_weekly_control_metrics(action_frame: pd.DataFrame) -> list[dict[str, str]]:
+    """Expose the live numerical effect of every weekly scenario control."""
+    if action_frame.empty or "action" not in action_frame:
+        return []
+
+    rows = {
+        _normalize_action_name(row["action"]): row
+        for row in action_frame.to_dict(orient="records")
+    }
+    hold = rows.get("Hold", {})
+    protect = rows.get("Protect Yield", {})
+    promote = rows.get("Promote", {})
+    if not hold:
+        return []
+
+    hold_bookings = float(hold.get("expected_bookings", 0.0))
+    promote_bookings = float(promote.get("expected_bookings", hold_bookings))
+    return [
+        {
+            "label": "Hold: agent commission",
+            "value": _format_currency(hold.get("commission_paid", 0.0)),
+            "help": "Changes when weekly direct capture changes.",
+        },
+        {
+            "label": "Protect: net change vs Hold",
+            "value": _format_currency(protect.get("delta_vs_hold", 0.0)),
+            "help": "Changes with elasticity and direct capture.",
+        },
+        {
+            "label": "Promote: net change vs Hold",
+            "value": _format_currency(promote.get("delta_vs_hold", 0.0)),
+            "help": "Changes with elasticity, direct capture, and campaign cost.",
+        },
+        {
+            "label": "Promote: booking lift",
+            "value": f"{promote_bookings - hold_bookings:+,.1f}",
+            "help": "Additional scenario bookings versus Hold; changes with elasticity.",
+        },
+    ]
+
+
 def _normalize_action_name(action: Any) -> str:
     text = str(action or "").strip()
     if not text:
@@ -508,13 +600,19 @@ def _select_numeric_column(frame: pd.DataFrame) -> str | None:
     return None
 
 
-def _render_metric_row(metrics: Sequence[Mapping[str, str]]) -> None:
+def _render_metric_row(metrics: Sequence[Mapping[str, str]], *, columns: int | None = None) -> None:
     if not metrics:
         return
-    cols = st.columns(min(4, len(metrics)), gap="small")
+    column_count = min(columns or 4, len(metrics))
+    cols = st.columns(column_count, gap="small")
     for index, metric in enumerate(metrics):
         with cols[index % len(cols)]:
-            st.metric(metric["label"], metric["value"], help=metric.get("help"))
+            st.metric(
+                metric["label"],
+                metric["value"],
+                delta=metric.get("delta"),
+                help=metric.get("help"),
+            )
 
 
 def _inject_commercial_css() -> None:
@@ -759,7 +857,10 @@ def render_commercial_strategy(
 
     with right:
         st.markdown("#### Weekly Commercial Action")
-        st.caption("Weekly demand-shaping controls for the next sailing cycle.")
+        st.caption(
+            "Live scenario controls for the next sailing cycle. The financial cards and comparison table "
+            "recalculate immediately; the recommended action changes only when the operational guardrails change."
+        )
         weekly_capture = st.slider(
             "Weekly direct capture",
             min_value=0.0,
@@ -768,7 +869,12 @@ def render_commercial_strategy(
             step=1.0,
             format="%.0f%%",
             key=commercial_control_key("weekly_direct_capture_percent"),
+            help="Share of weekly bookings handled directly. Higher capture reduces third-party commission paid.",
         ) / 100.0
+        st.caption(
+            "Weekly direct capture is the share of this week's bookings expected to come through ABC's own "
+            "direct channels instead of third-party travel agents. Higher direct capture lowers weekly commission expense."
+        )
         weekly_elasticity = st.slider(
             "Price elasticity",
             min_value=0.0,
@@ -777,6 +883,7 @@ def render_commercial_strategy(
             step=0.05,
             format="%.2f",
             key=commercial_control_key("weekly_price_elasticity"),
+            help="Estimated demand response to a fare change. Higher elasticity creates a larger booking response.",
         )
         weekly_promotion_cost = st.number_input(
             "Promotion cost ($)",
@@ -784,6 +891,7 @@ def render_commercial_strategy(
             step=250.0,
             value=DEFAULT_PROMOTION_COST,
             key=commercial_control_key("weekly_promotion_cost"),
+            help="Campaign spend charged only to the Promote scenario.",
         )
 
         weekly_result = build_weekly_commercial_strategy(
@@ -822,14 +930,43 @@ def render_commercial_strategy(
 
         _render_commercial_card(recommended_action, rationale, weekly_result)
         weekly_action_frame = _build_weekly_action_frame(weekly_result)
-        metrics = _build_weekly_metrics(weekly_result, weekly_action_frame, recommended_action)
-        _render_metric_row(metrics)
+        st.markdown("##### Live Control Impact")
+        weekly_control_metrics = _build_weekly_control_metrics(weekly_action_frame)
+        _render_metric_row(weekly_control_metrics[:2], columns=2)
+        _render_metric_row(weekly_control_metrics[2:], columns=2)
+        st.caption(
+            f"Current inputs: {_format_percent(weekly_capture)} direct capture, "
+            f"{float(weekly_elasticity):.2f} elasticity, and {_format_currency(weekly_promotion_cost)} campaign cost."
+        )
 
         if not weekly_action_frame.empty:
-            st.dataframe(weekly_action_frame, width="stretch", hide_index=True)
+            st.markdown("##### Action Comparison")
+            st.dataframe(
+                _build_weekly_display_frame(weekly_action_frame),
+                width="stretch",
+                hide_index=True,
+            )
             action_column = _select_action_column(weekly_action_frame)
-            chart_column = _select_numeric_column(weekly_action_frame)
+            chart_column = (
+                "net_revenue_after_channel_cost"
+                if "net_revenue_after_channel_cost" in weekly_action_frame
+                else _select_numeric_column(weekly_action_frame)
+            )
             if action_column is not None and chart_column is not None:
                 chart_frame = weekly_action_frame[[action_column, chart_column]].copy()
                 chart_frame = chart_frame.set_index(action_column)
                 st.bar_chart(chart_frame)
+
+        st.markdown("##### How the Weekly Calculation Works")
+        st.markdown(
+            "- **Protect Yield:** raises fares 10%; expected bookings fall by `elasticity x 10%`.\n"
+            "- **Hold:** leaves fares and demand unchanged and provides the comparison baseline.\n"
+            "- **Promote:** lowers fares 8%; expected bookings rise by `elasticity x 8%`, then campaign cost is deducted.\n"
+            "- **Agent commission:** `gross revenue x (1 - direct capture) x commission rate`.\n"
+            "- **Net revenue after channel cost:** `gross revenue - agent commission - campaign cost`."
+        )
+        st.info(
+            "Why the headline may stay the same: Protect Yield / Hold / Promote is selected from overflow risk "
+            "and spare-capacity guardrails produced by the staffing analysis. Weekly controls test the financial "
+            "effect of each action; they do not override those safety guardrails."
+        )

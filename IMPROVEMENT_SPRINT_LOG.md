@@ -61,6 +61,21 @@ Create a polished, highly visual Streamlit decision-support system that preserve
 - Surfaced the annual channel recommendation in the Commercial Strategy tab instead of showing economics without a decision.
 - Replaced deprecated `use_container_width` calls with the current Streamlit `width` API.
 - Third consecutive visual-verification attempt failed at the same pre-navigation sandbox-metadata boundary. Under the goal's blocked-audit rule, rendered desktop/mobile verification is now formally blocked pending an external runtime fix.
+- Began the user-requested usability and commercial-interactivity refinement pass.
+- Enlarged the ABC Cruise Lines logo from a small icon to a 190 x 118 pixel desktop brand mark, expanded the Voyage Command masthead, and retained a 132 x 84 pixel mobile treatment.
+- Strengthened primary-button and hero-chip text selectors so Run Analysis and the three operating-brief chips remain white and readable against blue backgrounds.
+- Added modeled previous-week deltas to Decision Signals for recommended agents, coverage, overflow risk, spare capacity, overflow commission, operating cost, and the manager plan.
+- Changed probabilistic outlook labels from unexplained P25/P50/P90 shorthand to 25th/50th/90th percentile language with plain-English probability context.
+- Stacked labor cost, overflow commission, and total operating cost vertically in each outlook card so large values have adequate width.
+- Replaced the process-oriented Methodology content with a calculation reference covering forecast weights, workload, capacity, FTE, coverage, overflow, labor, commission, cost, and selection logic.
+- Reworked Weekly Commercial Action feedback: added help text to every control, live control-impact KPIs, a compact formatted action table, a net-revenue chart, formulas, and an explicit explanation of why financial estimates can change while an operationally guarded headline action remains unchanged.
+- Created `VOYAGE_COMMAND_USER_GUIDE.md`, a plain-language report explaining every application section, input, output, guardrail, percentile, and core formula.
+- Added focused tests for the readable weekly action table and live control-impact metrics; the focused commercial suite now passes 16 tests.
+- Ran the complete regression suite after the refinement pass: 110 tests and 10 subtests passed, with no failures.
+- Verified the revised app through Streamlit AppTest with zero exceptions and all four tabs present.
+- Proved weekly control responsiveness in the rendered Streamlit widget tree: direct capture at 80% changed Hold commission from $44,200 to $17,680; elasticity at 0.20 changed Promote booking lift from +30.6 to +7.7; increasing promotion cost from $2,500 to $10,000 reduced Promote net value by exactly $7,500.
+- Confirmed Decision Signals now render signed previous-week deltas and each probabilistic outlook renders full-width labor, overflow, and operating-cost metrics.
+- Retried the in-app rendered screenshot connection; the external preview service still failed before navigation due missing sandbox metadata, so screenshot-based visual QA remains explicitly unproven rather than assumed.
 
 ## Decisions
 
@@ -83,7 +98,7 @@ Create a polished, highly visual Streamlit decision-support system that preserve
 - Course brief visual review: three legible pages; source establishes three ships, roughly 100 shore-side staff, roughly 300 shipboard staff, 10-15% third-party commissions, approximately $10M annual commissions, a 50% direct-booking benchmark, and approximately $4M annual savings target.
 - Existing report visual review: eight-page report with staffing/pricing scope, process diagrams, business-case graphic, and a two-week peak/low case study; sections 7-10 are placeholders in the supplied PDF.
 - Runtime health endpoint returned `ok` on the current app. In-app browser bootstrap was unavailable due missing session sandbox metadata, and a headless Chrome fallback did not expose its debug port; visual verification remains an explicit later gate.
-- New focused commercial suite: 14 tests passed.
+- New focused commercial suite: 16 tests passed after the usability refinement.
 - Full regression suite after final robustness changes: 108 tests passed in 42.764 seconds.
 - Python compilation and imports: passed for `app.py`, shared UI, commercial UI, and commercial strategy modules.
 - Streamlit AppTest: 0 exceptions; tabs detected as Command Deck, Workforce Planner, Commercial Strategy, and Scenarios & Evidence; Run Analysis and Reset to Baseline detected.
@@ -91,6 +106,8 @@ Create a polished, highly visual Streamlit decision-support system that preserve
 - Current runtime health: `ok` at `http://127.0.0.1:8501/_stcore/health`.
 - `git diff --check`: no whitespace errors (only expected Windows LF/CRLF notices).
 - Visual capture attempts through the in-app browser, Chrome DevTools, headless Edge, and isolated headless Chrome did not produce a usable rendered screenshot in this session.
+- Refinement regression suite: 110 tests and 10 subtests passed; Streamlit AppTest reported zero exceptions and proved all weekly commercial controls update their intended outputs.
+- Added a visible `Version 1.0.0` badge beneath the top-left masthead title, backed by one manually maintained `APP_VERSION` constant.
 
 ## Remaining Work
 
